@@ -1,0 +1,4 @@
+dist-newstyle/
+result
+haskell-mobile-src
+cabal.project.local

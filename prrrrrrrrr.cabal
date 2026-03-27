@@ -1,0 +1,117 @@
+cabal-version:      3.0
+
+name:           prrrrrrrrr
+version:        0.1.0.0
+homepage:       https://github.com/jappeace-sloth/prrrrrrrrr
+bug-reports:    https://github.com/jappeace-sloth/prrrrrrrrr/issues
+author:         Jappie Klooster
+maintainer:     hi@jappie.me
+copyright:      2026 Jappie Klooster
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/jappeace-sloth/prrrrrrrrr
+
+common common-options
+  default-extensions:
+      EmptyCase
+      FlexibleContexts
+      FlexibleInstances
+      InstanceSigs
+      MultiParamTypeClasses
+      LambdaCase
+      MultiWayIf
+      NamedFieldPuns
+      TupleSections
+      DeriveFoldable
+      DeriveFunctor
+      DeriveGeneric
+      DeriveLift
+      DeriveTraversable
+      DerivingStrategies
+      GeneralizedNewtypeDeriving
+      StandaloneDeriving
+      OverloadedStrings
+      TypeApplications
+      NumericUnderscores
+      ImportQualifiedPost
+
+  ghc-options:
+    -O2 -Wall -Werror -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Widentities -Wredundant-constraints
+    -Wcpp-undef -fwarn-tabs -Wpartial-fields
+    -fdefer-diagnostics -Wunused-packages
+    -fenable-th-splice-warnings
+    -fno-omit-yields
+
+  build-depends:
+      base >=4.9.1.0 && <4.22.0
+
+  default-language: Haskell2010
+
+-- | Implements the HaskellMobile.App Backpack signature for the gym tracker.
+library prrrrrrrrr-app-impl
+  import: common-options
+  exposed-modules:
+      HaskellMobile.App
+      GymTracker.Model
+      GymTracker.Storage
+      GymTracker.Views
+  hs-source-dirs:
+      src
+  build-depends:
+      haskell-mobile:haskell-mobile-lifecycle,
+      haskell-mobile:haskell-mobile-ui,
+      text,
+      containers
+  c-sources:
+      cbits/sqlite3.c
+      cbits/storage_helper.c
+  include-dirs:
+      cbits
+  -- sqlite3 needs these
+  cc-options: -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION
+
+-- | Instantiation library: mixes the indefinite haskell-mobile lib with our impl.
+library prrrrrrrrr-app
+  import: common-options
+  reexported-modules:
+      HaskellMobile,
+      HaskellMobile.Lifecycle,
+      HaskellMobile.App,
+      HaskellMobile.Widget,
+      HaskellMobile.Render,
+      GymTracker.Model,
+      GymTracker.Storage,
+      GymTracker.Views
+  build-depends:
+      haskell-mobile,
+      prrrrrrrrr:prrrrrrrrr-app-impl,
+      haskell-mobile:haskell-mobile-lifecycle,
+      haskell-mobile:haskell-mobile-ui
+
+executable exe
+  import: common-options
+  main-is: Main.hs
+  hs-source-dirs:
+      app
+  build-depends:
+      prrrrrrrrr:prrrrrrrrr-app
+  ghc-options: -Wno-unused-packages -threaded -rtsopts "-with-rtsopts=-N -M7G -T -Iw10"
+
+test-suite unit
+  import: common-options
+  type: exitcode-stdio-1.0
+  main-is: Test.hs
+  ghc-options: -Wno-unused-packages -threaded -rtsopts "-with-rtsopts=-N -M7G -T -Iw10"
+  hs-source-dirs:
+      test
+  build-depends:
+      tasty,
+      tasty-hunit,
+      prrrrrrrrr:prrrrrrrrr-app,
+      text,
+      containers

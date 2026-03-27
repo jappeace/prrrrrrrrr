@@ -1,0 +1,25 @@
+{ sources ? import ./npins
+, pkgs ? import sources.nixpkgs {}
+}:
+let
+  haskellMobileSrc = sources.haskell-mobile;
+  hp = pkgs.haskellPackages;
+in
+pkgs.mkShell {
+  buildInputs = [
+    (hp.ghcWithPackages (ps: [
+      ps.text
+      ps.containers
+      ps.tasty
+      ps.tasty-hunit
+    ]))
+    pkgs.cabal-install
+  ];
+
+  # Tell cabal where to find haskell-mobile source
+  shellHook = ''
+    if [ ! -e haskell-mobile-src ]; then
+      ln -sf ${haskellMobileSrc} haskell-mobile-src
+    fi
+  '';
+}

@@ -1,0 +1,24 @@
+{
+  "pins": {
+    "haskell-mobile": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "jappeace-sloth",
+        "repo": "haskell-mobile"
+      },
+      "branch": "text-input-widget",
+      "submodules": false,
+      "revision": "e94d86e6b726c6e9f34864980156e5b708dffad9",
+      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/e94d86e6b726c6e9f34864980156e5b708dffad9.tar.gz",
+      "hash": "sha256-RdiGEN/0ri6zM9iOyQfab49kr4OvzMf7lQb642s+6BY="
+    },
+    "nixpkgs": {
+      "type": "Channel",
+      "name": "nixpkgs-unstable",
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre968305.fdc7b8f7b30f/nixexprs.tar.xz",
+      "hash": "sha256-WLxi1vfcykjq9Yb2umqBJs6lVM6MpV2tXfcrAjroxUk="
+    }
+  },
+  "version": 7
+}
