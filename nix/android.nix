@@ -80,6 +80,7 @@ in pkgs.stdenv.mkDerivation {
 
     ${ghcCmd} -shared -O2 \
       -o libprrrrrrrrr.so \
+      -DHASKELL_MOBILE_ANDROID \
       -I${haskellMobileSrc}/include \
       -I${../cbits} \
       HaskellMobile.hs \
