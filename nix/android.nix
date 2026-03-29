@@ -64,6 +64,7 @@ in pkgs.stdenv.mkDerivation {
 
     echo "=== Copy source modules ==="
     mkdir -p HaskellMobile GymTracker
+    cp ${haskellMobileSrc}/src/HaskellMobile/Types.hs HaskellMobile/
     cp ${haskellMobileSrc}/src-lifecycle/HaskellMobile/Lifecycle.hs HaskellMobile/
     cp ${haskellMobileSrc}/src-ui/HaskellMobile/Widget.hs HaskellMobile/
     cp ${haskellMobileSrc}/src-ui/HaskellMobile/UIBridge.hs HaskellMobile/
@@ -80,7 +81,7 @@ in pkgs.stdenv.mkDerivation {
 
     ${ghcCmd} -shared -O2 \
       -o libprrrrrrrrr.so \
-      -DHASKELL_MOBILE_ANDROID \
+      -DHASKELL_MOBILE_PLATFORM \
       -I${haskellMobileSrc}/include \
       -I${../cbits} \
       HaskellMobile.hs \

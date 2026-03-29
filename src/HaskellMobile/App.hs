@@ -5,7 +5,7 @@ module HaskellMobile.App (mobileApp) where
 import GymTracker.Model (AppState, newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Views (appRootView)
-import HaskellMobile (MobileApp(..))
+import HaskellMobile.Types (MobileApp(..))
 import HaskellMobile.Lifecycle (loggingMobileContext)
 import System.IO.Unsafe (unsafePerformIO)
 
