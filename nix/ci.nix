@@ -1,10 +1,13 @@
 { sources ? import ../npins }:
 let
-  pkgs = import sources.nixpkgs {};
+  pkgs = import sources.nixpkgs {
+    config.allowUnfree = true;
+    config.android_sdk.accept_license = true;
+  };
   haskellMobileSrc = sources.haskell-mobile;
   hp = pkgs.haskellPackages;
 
-  # Both packages are built together so cabal can resolve the dependency
+  # Both packages built together so cabal can resolve the dependency
   # from prrrrrrrrr to haskell-mobile (IORef-based app registration).
   combined = pkgs.stdenv.mkDerivation {
     name = "prrrrrrrrr-project";
@@ -42,6 +45,18 @@ let
       touch $out/ci-passed
     '';
   };
+
+  runTest = name: testDrv: scriptName:
+    pkgs.runCommand "run-${name}" { __noChroot = true; } ''
+      ${testDrv}/bin/${scriptName}
+      touch $out
+    '';
 in {
   native = combined;
+  android = import ./android.nix { inherit sources; };
+  apk = import ./apk.nix { inherit sources; };
+
+  # Android tests (Linux, needs KVM)
+  emulator-test = runTest "emulator-test"
+    (import ./emulator.nix { inherit sources; }) "test-lifecycle";
 }

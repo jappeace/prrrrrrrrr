@@ -52,14 +52,19 @@ common common-options
 
   default-language: Haskell2010
 
--- | Implements the gym tracker app using haskell-mobile's MobileApp type.
-library prrrrrrrrr-app-impl
+library
   import: common-options
   exposed-modules:
       HaskellMobile.App
       GymTracker.Model
       GymTracker.Storage
       GymTracker.Views
+  reexported-modules:
+      HaskellMobile,
+      HaskellMobile.Types,
+      HaskellMobile.Lifecycle,
+      HaskellMobile.Widget,
+      HaskellMobile.Render
   hs-source-dirs:
       src
   build-depends:
@@ -74,29 +79,13 @@ library prrrrrrrrr-app-impl
   -- sqlite3 needs these
   cc-options: -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION
 
--- | Collects all project libraries for consumers (exe, tests).
-library prrrrrrrrr-app
-  import: common-options
-  reexported-modules:
-      HaskellMobile,
-      HaskellMobile.Lifecycle,
-      prrrrrrrrr:HaskellMobile.App,
-      HaskellMobile.Widget,
-      HaskellMobile.Render,
-      GymTracker.Model,
-      GymTracker.Storage,
-      GymTracker.Views
-  build-depends:
-      haskell-mobile,
-      prrrrrrrrr:prrrrrrrrr-app-impl
-
 executable exe
   import: common-options
   main-is: Main.hs
   hs-source-dirs:
       app
   build-depends:
-      prrrrrrrrr:prrrrrrrrr-app
+      prrrrrrrrr
   ghc-options: -Wno-unused-packages -threaded -rtsopts "-with-rtsopts=-N -M7G -T -Iw10"
 
 test-suite unit
@@ -109,6 +98,6 @@ test-suite unit
   build-depends:
       tasty,
       tasty-hunit,
-      prrrrrrrrr:prrrrrrrrr-app,
+      prrrrrrrrr,
       text,
       containers

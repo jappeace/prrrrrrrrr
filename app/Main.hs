@@ -1,10 +1,10 @@
 module Main where
 
-import HaskellMobile (runMobileApp, platformLog, MobileApp(maContext))
-import HaskellMobile.App (mobileApp)
+import HaskellMobile (platformLog, runMobileApp, MobileApp(maContext))
 import HaskellMobile.Lifecycle (LifecycleEvent(..), MobileContext(onLifecycle))
+import HaskellMobile.App (mobileApp)
 
--- | Desktop entry point: registers the app, then simulates lifecycle.
+-- | Desktop entry point: registers the app, simulates lifecycle.
 main :: IO ()
 main = do
   runMobileApp mobileApp

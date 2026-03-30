@@ -1,15 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Implements the mobile app definition for the gym PR tracker.
+-- | App registration for the gym PR tracker.
 module HaskellMobile.App (mobileApp) where
 
 import GymTracker.Model (AppState, newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Views (appRootView)
-import HaskellMobile.Types (MobileApp(..))
 import HaskellMobile.Lifecycle (loggingMobileContext)
+import HaskellMobile.Types (MobileApp(..))
 import System.IO.Unsafe (unsafePerformIO)
 
--- | The gym tracker mobile app.
+-- | The gym PR tracker mobile app.
 mobileApp :: MobileApp
 mobileApp = MobileApp
   { maContext = loggingMobileContext
