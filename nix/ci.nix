@@ -46,12 +46,17 @@ let
     '';
   };
 
+  runTest = name: testDrv: scriptName:
+    pkgs.runCommand "run-${name}" { __noChroot = true; } ''
+      ${testDrv}/bin/${scriptName}
+      touch $out
+    '';
 in {
   native = combined;
   android = import ./android.nix { inherit sources; };
   apk = import ./apk.nix { inherit sources; };
 
-  # Emulator test needs KVM and __noChroot, which is incompatible with
-  # sandbox = true (GitHub Actions default).  Build separately:
-  #   nix-build nix/emulator.nix
+  # Android tests (Linux, needs KVM)
+  emulator-test = runTest "emulator-test"
+    (import ./emulator.nix { inherit sources; }) "test-lifecycle";
 }
