@@ -47,7 +47,10 @@ let
   };
 
   runTest = name: testDrv: scriptName:
-    pkgs.runCommand "run-${name}" { __noChroot = true; } ''
+    pkgs.runCommand "run-${name}" {
+      __noChroot = true;
+      nativeBuildInputs = [ pkgs.jdk17_headless ];
+    } ''
       ${testDrv}/bin/${scriptName}
       touch $out
     '';
