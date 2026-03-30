@@ -64,8 +64,6 @@ library prrrrrrrrr-app-impl
       src
   build-depends:
       haskell-mobile,
-      haskell-mobile:haskell-mobile-lifecycle,
-      haskell-mobile:haskell-mobile-ui,
       text,
       containers
   c-sources:
@@ -82,7 +80,7 @@ library prrrrrrrrr-app
   reexported-modules:
       HaskellMobile,
       HaskellMobile.Lifecycle,
-      HaskellMobile.App,
+      prrrrrrrrr:HaskellMobile.App,
       HaskellMobile.Widget,
       HaskellMobile.Render,
       GymTracker.Model,
@@ -90,9 +88,7 @@ library prrrrrrrrr-app
       GymTracker.Views
   build-depends:
       haskell-mobile,
-      prrrrrrrrr:prrrrrrrrr-app-impl,
-      haskell-mobile:haskell-mobile-lifecycle,
-      haskell-mobile:haskell-mobile-ui
+      prrrrrrrrr:prrrrrrrrr-app-impl
 
 executable exe
   import: common-options

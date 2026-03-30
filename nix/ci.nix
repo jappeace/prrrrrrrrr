@@ -4,9 +4,8 @@ let
   haskellMobileSrc = sources.haskell-mobile;
   hp = pkgs.haskellPackages;
 
-  # Backpack instantiation requires both packages in the same cabal project.
-  # We cannot use callCabal2nix for each separately because the indefinite
-  # haskell-mobile library must be instantiated in the same build as prrrrrrrrr.
+  # Both packages are built together so cabal can resolve the dependency
+  # from prrrrrrrrr to haskell-mobile (IORef-based app registration).
   combined = pkgs.stdenv.mkDerivation {
     name = "prrrrrrrrr-project";
     src = ../.;
