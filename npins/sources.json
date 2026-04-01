@@ -7,11 +7,11 @@
         "owner": "jappeace-sloth",
         "repo": "haskell-mobile"
       },
-      "branch": "extract-nix-lib",
+      "branch": "cross-deps-hackage",
       "submodules": false,
-      "revision": "2cd362b31df6b0e5c44f6b63118d8f01b85d106f",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/2cd362b31df6b0e5c44f6b63118d8f01b85d106f.tar.gz",
-      "hash": "sha256-T06Dwa5+kA+8ufzI9Y/JhEmLTLjzmZRPe6pbqi4PLws="
+      "revision": "c985e7f60a8fff3ed1ecffcb2d90c0f05c182f0e",
+      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/c985e7f60a8fff3ed1ecffcb2d90c0f05c182f0e.tar.gz",
+      "hash": "sha256-qxQ4UWUoI4Qn5LVmDfRRKJWSTeySpcIN+R5rkKABb1c="
     },
     "nixpkgs": {
       "type": "Channel",
