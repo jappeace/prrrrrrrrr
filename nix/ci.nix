@@ -62,4 +62,6 @@ in {
   # Android tests (Linux, needs KVM)
   emulator-test = runTest "emulator-test"
     (import ./emulator.nix { inherit sources; }) "test-lifecycle";
+  emulator-ui-test = runTest "emulator-ui-test"
+    (import ./emulator-ui.nix { inherit sources; }) "test-ui";
 }
