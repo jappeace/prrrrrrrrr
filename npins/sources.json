@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace-sloth",
+        "owner": "jappeace",
         "repo": "haskell-mobile"
       },
-      "branch": "extract-nix-lib",
+      "branch": "master",
       "submodules": false,
-      "revision": "2cd362b31df6b0e5c44f6b63118d8f01b85d106f",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/2cd362b31df6b0e5c44f6b63118d8f01b85d106f.tar.gz",
-      "hash": "sha256-T06Dwa5+kA+8ufzI9Y/JhEmLTLjzmZRPe6pbqi4PLws="
+      "revision": "ddfff65235fae32ea099aa4cca06c155485698a1",
+      "url": "https://github.com/jappeace/haskell-mobile/archive/ddfff65235fae32ea099aa4cca06c155485698a1.tar.gz",
+      "hash": "sha256-qxQ4UWUoI4Qn5LVmDfRRKJWSTeySpcIN+R5rkKABb1c="
     },
     "nixpkgs": {
       "type": "Channel",
