@@ -1,0 +1,540 @@
+# Android emulator UI interaction test.
+#
+# Boots an emulator, installs the APK, and verifies the full PR entry flow:
+#   1. The ExerciseList screen renders (title "PRRRRRRRRR", exercise buttons)
+#   2. Tapping "Snatch: No PR" navigates to the EnterPR screen
+#   3. Entering weight "100" and tapping "Save" returns to ExerciseList
+#   4. The exercise list shows "Snatch: 100.0 kg" — the PR was saved
+#
+# Independent from nix/emulator.nix (lifecycle test) — can run in parallel.
+#
+# Usage:
+#   nix-build nix/emulator-ui.nix -o result-emulator-ui
+#   ./result-emulator-ui/bin/test-ui
+{ sources ? import ../npins }:
+let
+  pkgs = import sources.nixpkgs {
+    config.allowUnfree = true;
+    config.android_sdk.accept_license = true;
+  };
+
+  apk = import ./apk.nix { inherit sources; };
+
+  androidComposition = pkgs.androidenv.composeAndroidPackages {
+    platformVersions = [ "34" ];
+    includeEmulator = true;
+    includeSystemImages = true;
+    systemImageTypes = [ "google_apis_playstore" ];
+    abiVersions = [ "x86_64" ];
+    cmdLineToolsVersion = "8.0";
+  };
+
+  sdk = androidComposition.androidsdk;
+  sdkRoot = "${sdk}/libexec/android-sdk";
+
+  platformVersion = "34";
+  systemImageType = "google_apis_playstore";
+  abiVersion = "x86_64";
+  imagePackage = "system-images;android-${platformVersion};${systemImageType};${abiVersion}";
+
+in pkgs.stdenv.mkDerivation {
+  name = "prrrrrrrrr-emulator-ui-test";
+
+  dontUnpack = true;
+
+  buildPhase = ''
+    mkdir -p $out/bin
+
+    cat > $out/bin/test-ui << 'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- Configuration ---
+export ANDROID_SDK_ROOT="${sdkRoot}"
+export ANDROID_HOME="${sdkRoot}"
+unset ANDROID_NDK_HOME 2>/dev/null || true
+ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
+EMULATOR="$ANDROID_SDK_ROOT/emulator/emulator"
+AVDMANAGER="${sdk}/bin/avdmanager"
+APK_PATH="${apk}/prrrrrrrrr.apk"
+PACKAGE="me.jappie.prrrrrrrrr"
+ACTIVITY=".MainActivity"
+DEVICE_NAME="test_ui"
+
+# --- Debug: show SDK structure ---
+echo "=== SDK structure ==="
+echo "SDK_ROOT: $ANDROID_SDK_ROOT"
+ls "$ANDROID_SDK_ROOT/" 2>/dev/null || echo "(cannot list SDK root)"
+echo "--- system-images ---"
+ls -R "$ANDROID_SDK_ROOT/system-images/" 2>/dev/null | head -20 || echo "(no system-images)"
+echo "=== End SDK structure ==="
+
+# Detect KVM
+if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+    echo "KVM detected -- using hardware acceleration"
+    ACCEL_FLAG=""
+    BOOT_TIMEOUT=180
+else
+    echo "No KVM -- using software emulation (slow boot expected)"
+    ACCEL_FLAG="-no-accel"
+    BOOT_TIMEOUT=900
+fi
+
+# --- Temp dirs ---
+WORK_DIR=$(mktemp -d /tmp/prrrrrrrrr-emu-ui-XXXX)
+export HOME="$WORK_DIR/home"
+export ANDROID_USER_HOME="$WORK_DIR/user-home"
+export ANDROID_AVD_HOME="$WORK_DIR/avd"
+export ANDROID_EMULATOR_HOME="$WORK_DIR/emulator-home"
+export TMPDIR="$WORK_DIR/tmp"
+mkdir -p "$HOME" "$ANDROID_USER_HOME" "$ANDROID_AVD_HOME" "$ANDROID_EMULATOR_HOME" "$TMPDIR"
+
+# Restart ADB server so it uses our fresh HOME for key generation.
+"$ADB" kill-server 2>/dev/null || true
+"$ADB" start-server 2>/dev/null || true
+
+LOGCAT_FILE="$WORK_DIR/logcat.txt"
+UI_DUMP="$WORK_DIR/ui.xml"
+EMU_PID=""
+
+cleanup() {
+    echo ""
+    echo "=== Cleaning up ==="
+    if [ -n "$EMU_PID" ] && kill -0 "$EMU_PID" 2>/dev/null; then
+        echo "Killing emulator (PID $EMU_PID)"
+        kill "$EMU_PID" 2>/dev/null || true
+        wait "$EMU_PID" 2>/dev/null || true
+    fi
+    "$ADB" -s "emulator-$PORT" emu kill 2>/dev/null || true
+    rm -rf "$WORK_DIR"
+    echo "Cleanup done."
+}
+trap cleanup EXIT
+
+# --- Find free port ---
+echo "=== Finding free emulator port ==="
+PORT=""
+for p in $(seq 5554 2 5584); do
+    if ! "$ADB" devices 2>/dev/null | grep -q "emulator-$p"; then
+        PORT=$p
+        break
+    fi
+done
+
+if [ -z "$PORT" ]; then
+    echo "ERROR: No free emulator port found (5554-5584 all in use)"
+    exit 1
+fi
+echo "Using port: $PORT"
+export ANDROID_SERIAL="emulator-$PORT"
+
+# --- Create AVD ---
+echo "=== Creating AVD ==="
+echo "n" | "$AVDMANAGER" create avd \
+    --force \
+    --name "$DEVICE_NAME" \
+    --package "${imagePackage}" \
+    --device "pixel_6" \
+    -p "$ANDROID_AVD_HOME/$DEVICE_NAME.avd"
+
+cat >> "$ANDROID_AVD_HOME/$DEVICE_NAME.avd/config.ini" << 'AVDCONF'
+hw.ramSize = 4096
+hw.gpu.enabled = yes
+hw.gpu.mode = swiftshader_indirect
+disk.dataPartition.size = 2G
+AVDCONF
+
+# Fix system image path if needed
+SYSIMG_DIR="$ANDROID_SDK_ROOT/system-images/android-${platformVersion}/${systemImageType}/${abiVersion}"
+if [ ! -d "$SYSIMG_DIR" ]; then
+    echo "WARNING: Expected system image dir not found: $SYSIMG_DIR"
+    echo "Searching for system image..."
+    FOUND_SYSIMG=$(find "$ANDROID_SDK_ROOT" -name "system.img" -print -quit 2>/dev/null || echo "")
+    if [ -n "$FOUND_SYSIMG" ]; then
+        SYSIMG_DIR=$(dirname "$FOUND_SYSIMG")
+        echo "Found system image at: $SYSIMG_DIR"
+        sed -i "s|^image.sysdir.1=.*|image.sysdir.1=$SYSIMG_DIR/|" "$ANDROID_AVD_HOME/$DEVICE_NAME.avd/config.ini"
+        echo "Patched image.sysdir.1 in AVD config"
+    else
+        echo "ERROR: Could not find system.img anywhere in SDK"
+    fi
+else
+    echo "System image dir exists: $SYSIMG_DIR"
+fi
+
+# --- Boot emulator ---
+echo "=== Booting emulator ==="
+"$EMULATOR" \
+    -avd "$DEVICE_NAME" \
+    -no-window \
+    -no-audio \
+    -no-boot-anim \
+    -no-metrics \
+    -port "$PORT" \
+    -gpu swiftshader_indirect \
+    -no-snapshot \
+    -memory 4096 \
+    $ACCEL_FLAG \
+    &
+EMU_PID=$!
+echo "Emulator PID: $EMU_PID"
+
+# --- Wait for boot ---
+echo "=== Waiting for boot (timeout: ''${BOOT_TIMEOUT}s) ==="
+BOOT_DONE=""
+ELAPSED=0
+while [ $ELAPSED -lt $BOOT_TIMEOUT ]; do
+    BOOT_DONE=$("$ADB" -s "emulator-$PORT" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || echo "")
+    if [ "$BOOT_DONE" = "1" ]; then
+        echo "Boot completed after ~''${ELAPSED}s"
+        break
+    fi
+    sleep 10
+    ELAPSED=$((ELAPSED + 10))
+    if [ $((ELAPSED % 60)) -eq 0 ]; then
+        echo "  Still waiting... (''${ELAPSED}s elapsed)"
+    fi
+done
+
+if [ "$BOOT_DONE" != "1" ]; then
+    echo "ERROR: Emulator failed to boot within ''${BOOT_TIMEOUT}s"
+    exit 1
+fi
+
+# Wait for device to settle
+echo "Waiting for device to settle..."
+sleep 30
+
+# --- Install APK ---
+echo "=== Installing APK ==="
+INSTALL_OK=0
+for attempt in 1 2 3; do
+    if "$ADB" -s "emulator-$PORT" install -t "$APK_PATH" 2>&1; then
+        INSTALL_OK=1
+        break
+    fi
+    echo "Install attempt $attempt failed, retrying in 10s..."
+    sleep 10
+done
+
+if [ $INSTALL_OK -eq 0 ]; then
+    echo "ERROR: Failed to install APK after 3 attempts"
+    exit 1
+fi
+echo "APK installed."
+
+# --- Clear logcat buffer ---
+echo "=== Preparing logcat ==="
+"$ADB" -s "emulator-$PORT" logcat -c
+
+# --- Launch activity ---
+echo "=== Launching $PACKAGE/$ACTIVITY ==="
+"$ADB" -s "emulator-$PORT" shell am start -n "$PACKAGE/$ACTIVITY"
+
+# --- Helper: dump UI hierarchy with retries ---
+dump_ui() {
+    local target_file="$1"
+    local dump_ok=0
+    for attempt in 1 2 3; do
+        if "$ADB" -s "emulator-$PORT" shell uiautomator dump /data/local/tmp/ui.xml 2>&1 | grep -q "dumped"; then
+            "$ADB" -s "emulator-$PORT" pull /data/local/tmp/ui.xml "$target_file" 2>/dev/null
+            dump_ok=1
+            break
+        fi
+        echo "  uiautomator dump attempt $attempt failed, retrying in 5s..."
+        sleep 5
+    done
+    return $((1 - dump_ok))
+}
+
+# --- Helper: extract tap coordinates for a text element ---
+tap_element() {
+    local xml_file="$1"
+    local search_text="$2"
+    local line
+    line=$(grep "$search_text" "$xml_file" 2>/dev/null | head -1)
+    if [ -z "$line" ]; then
+        echo "WARNING: Could not find '$search_text' in UI dump"
+        return 1
+    fi
+    local coords
+    coords=$(echo "$line" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+    if [ -z "$coords" ]; then
+        echo "WARNING: Could not extract bounds for '$search_text'"
+        return 1
+    fi
+    local left top right bottom
+    left=$(echo "$coords" | sed 's/.*\[//;s/,.*//' | head -1)
+    # Parse bounds="[left,top][right,bottom]"
+    left=$(echo "$coords" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
+    top=$(echo "$coords" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
+    right=$(echo "$coords" | grep -o '\[[0-9]*,' | tail -1 | tr -d '[,')
+    bottom=$(echo "$coords" | grep -o ',[0-9]*\]' | tail -1 | tr -d ',]')
+    local tap_x=$(( (left + right) / 2 ))
+    local tap_y=$(( (top + bottom) / 2 ))
+    echo "Tapping '$search_text' at ($tap_x, $tap_y)"
+    "$ADB" -s "emulator-$PORT" shell input tap "$tap_x" "$tap_y"
+}
+
+# ============================================================
+# Step 1: Wait for initial render
+# ============================================================
+echo ""
+echo "=== Step 1: Waiting for initial render (timeout: 120s) ==="
+POLL_TIMEOUT=120
+POLL_ELAPSED=0
+RENDER_DONE=0
+
+while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+    if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
+        RENDER_DONE=1
+        echo "Initial render detected after ~''${POLL_ELAPSED}s"
+        break
+    fi
+    sleep 2
+    POLL_ELAPSED=$((POLL_ELAPSED + 2))
+done
+
+if [ $RENDER_DONE -eq 0 ]; then
+    echo "WARNING: setRoot not found in logcat after ''${POLL_TIMEOUT}s"
+fi
+
+# Extra settle time for the view hierarchy to stabilize
+sleep 5
+
+# ============================================================
+# Step 2: Verify ExerciseList screen
+# ============================================================
+echo ""
+echo "=== Step 2: Verify ExerciseList screen ==="
+EXIT_CODE=0
+
+# Logcat checks
+if grep -q 'setStrProp.*PRRRRRRRRR' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: ExerciseList — title 'PRRRRRRRRR' in logcat"
+else
+    echo "FAIL: ExerciseList — title 'PRRRRRRRRR' in logcat"
+    EXIT_CODE=1
+fi
+
+if grep -q 'setStrProp.*Snatch: No PR' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: ExerciseList — 'Snatch: No PR' in logcat"
+else
+    echo "FAIL: ExerciseList — 'Snatch: No PR' in logcat"
+    EXIT_CODE=1
+fi
+
+if grep -q 'setHandler.*click' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: ExerciseList — click handlers in logcat"
+else
+    echo "FAIL: ExerciseList — click handlers in logcat"
+    EXIT_CODE=1
+fi
+
+# UI hierarchy check
+if dump_ui "$UI_DUMP"; then
+    if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'PRRRRRRRRR' visible"
+    else
+        echo "FAIL: UI hierarchy — 'PRRRRRRRRR' visible"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'Snatch: No PR' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'Snatch: No PR' visible"
+    else
+        echo "FAIL: UI hierarchy — 'Snatch: No PR' visible"
+        EXIT_CODE=1
+    fi
+else
+    echo "FAIL: UI hierarchy — could not dump view hierarchy"
+    EXIT_CODE=1
+fi
+
+# ============================================================
+# Step 3: Tap "Snatch: No PR" button
+# ============================================================
+echo ""
+echo "=== Step 3: Tap 'Snatch: No PR' button ==="
+
+if ! tap_element "$UI_DUMP" "Snatch: No PR"; then
+    echo "FAIL: Could not tap 'Snatch: No PR' button"
+    EXIT_CODE=1
+fi
+
+echo "Waiting for re-render..."
+sleep 5
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+
+# ============================================================
+# Step 4: Verify EnterPR screen
+# ============================================================
+echo ""
+echo "=== Step 4: Verify EnterPR screen ==="
+
+if grep -q 'Click dispatched' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: EnterPR — Click dispatched in logcat"
+else
+    echo "FAIL: EnterPR — Click dispatched in logcat"
+    EXIT_CODE=1
+fi
+
+if grep -q 'setStrProp.*Set PR: Snatch' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: EnterPR — 'Set PR: Snatch' in logcat"
+else
+    echo "FAIL: EnterPR — 'Set PR: Snatch' in logcat"
+    EXIT_CODE=1
+fi
+
+if dump_ui "$UI_DUMP"; then
+    if grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
+    else
+        echo "FAIL: UI hierarchy — 'Set PR: Snatch' visible"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'Save' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'Save' button visible"
+    else
+        echo "FAIL: UI hierarchy — 'Save' button visible"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'Back' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'Back' button visible"
+    else
+        echo "FAIL: UI hierarchy — 'Back' button visible"
+        EXIT_CODE=1
+    fi
+else
+    echo "FAIL: UI hierarchy — could not dump EnterPR view hierarchy"
+    EXIT_CODE=1
+fi
+
+# ============================================================
+# Step 5: Enter weight "100"
+# ============================================================
+echo ""
+echo "=== Step 5: Enter weight '100' ==="
+
+# Tap the EditText field to focus it
+if dump_ui "$UI_DUMP"; then
+    # EditText is identified by the class android.widget.EditText
+    EDIT_LINE=$(grep 'EditText' "$UI_DUMP" 2>/dev/null | head -1)
+    if [ -n "$EDIT_LINE" ]; then
+        EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+        if [ -n "$EDIT_COORDS" ]; then
+            E_LEFT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
+            E_TOP=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
+            E_RIGHT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | tail -1 | tr -d '[,')
+            E_BOTTOM=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | tail -1 | tr -d ',]')
+            E_TAP_X=$(( (E_LEFT + E_RIGHT) / 2 ))
+            E_TAP_Y=$(( (E_TOP + E_BOTTOM) / 2 ))
+            echo "Tapping EditText at ($E_TAP_X, $E_TAP_Y)"
+            "$ADB" -s "emulator-$PORT" shell input tap "$E_TAP_X" "$E_TAP_Y"
+            sleep 1
+        else
+            echo "WARNING: Could not extract EditText bounds"
+        fi
+    else
+        echo "WARNING: No EditText found in UI dump"
+    fi
+fi
+
+echo "Entering text '100'..."
+"$ADB" -s "emulator-$PORT" shell input text "100"
+sleep 2
+
+# ============================================================
+# Step 6: Tap "Save" button
+# ============================================================
+echo ""
+echo "=== Step 6: Tap 'Save' button ==="
+
+if dump_ui "$UI_DUMP"; then
+    if ! tap_element "$UI_DUMP" "Save"; then
+        echo "FAIL: Could not tap 'Save' button"
+        EXIT_CODE=1
+    fi
+else
+    echo "FAIL: Could not dump UI to find Save button"
+    EXIT_CODE=1
+fi
+
+echo "Waiting for re-render back to ExerciseList..."
+sleep 5
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+
+# ============================================================
+# Step 7: Verify updated ExerciseList
+# ============================================================
+echo ""
+echo "=== Step 7: Verify updated ExerciseList ==="
+
+if grep -q 'setStrProp.*Snatch: 100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
+else
+    echo "FAIL: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
+    EXIT_CODE=1
+fi
+
+if dump_ui "$UI_DUMP"; then
+    if grep -q 'Snatch: 100.0 kg' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — 'Snatch: 100.0 kg' visible"
+    else
+        echo "FAIL: UI hierarchy — 'Snatch: 100.0 kg' visible"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
+        echo "PASS: UI hierarchy — back on ExerciseList (title visible)"
+    else
+        echo "FAIL: UI hierarchy — back on ExerciseList (title visible)"
+        EXIT_CODE=1
+    fi
+else
+    echo "FAIL: UI hierarchy — could not dump updated view hierarchy"
+    EXIT_CODE=1
+fi
+
+# ============================================================
+# Report
+# ============================================================
+
+# Final logcat dump
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+
+echo ""
+echo "=== Filtered logcat (UIBridge) ==="
+grep -i "UIBridge" "$LOGCAT_FILE" 2>/dev/null || echo "(no UIBridge lines)"
+echo "--- End filtered logcat ---"
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "=== Crash / library-load messages ==="
+    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|System\.load|loadLibrary|haskellmobile|CRASH|SIGNAL" \
+      "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+    echo "--- End crash messages ---"
+    echo ""
+    echo "=== Last 40 lines of logcat ==="
+    tail -40 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
+    echo "--- End logcat tail ---"
+fi
+
+echo ""
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "All UI interaction checks passed!"
+else
+    echo "Some UI interaction checks failed."
+fi
+
+exit $EXIT_CODE
+SCRIPT
+
+    chmod +x $out/bin/test-ui
+  '';
+
+  installPhase = "true";
+}
