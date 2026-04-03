@@ -248,24 +248,26 @@ dump_ui() {
 }
 
 # --- Helper: extract tap coordinates for a text element ---
+# uiautomator dumps the entire XML on one line, so we split into
+# individual elements first to isolate the correct node's bounds.
 tap_element() {
     local xml_file="$1"
     local search_text="$2"
-    local line
-    line=$(grep "$search_text" "$xml_file" 2>/dev/null | head -1)
-    if [ -z "$line" ]; then
+    # Split each XML element onto its own line, then find the one with our text
+    local node_line
+    node_line=$(sed 's/></>\n</g' "$xml_file" | grep "$search_text" | head -1)
+    if [ -z "$node_line" ]; then
         echo "WARNING: Could not find '$search_text' in UI dump"
         return 1
     fi
     local coords
-    coords=$(echo "$line" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+    coords=$(echo "$node_line" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
     if [ -z "$coords" ]; then
         echo "WARNING: Could not extract bounds for '$search_text'"
         return 1
     fi
-    local left top right bottom
-    left=$(echo "$coords" | sed 's/.*\[//;s/,.*//' | head -1)
     # Parse bounds="[left,top][right,bottom]"
+    local left top right bottom
     left=$(echo "$coords" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
     top=$(echo "$coords" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
     right=$(echo "$coords" | grep -o '\[[0-9]*,' | tail -1 | tr -d '[,')
@@ -421,8 +423,8 @@ echo "=== Step 5: Enter weight '100' ==="
 
 # Tap the EditText field to focus it
 if dump_ui "$UI_DUMP"; then
-    # EditText is identified by the class android.widget.EditText
-    EDIT_LINE=$(grep 'EditText' "$UI_DUMP" 2>/dev/null | head -1)
+    # Split XML into individual elements, then find the EditText node
+    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1)
     if [ -n "$EDIT_LINE" ]; then
         EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
         if [ -n "$EDIT_COORDS" ]; then
