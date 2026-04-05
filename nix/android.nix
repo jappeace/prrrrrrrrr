@@ -13,8 +13,6 @@ lib.mkAndroidLib {
   javaPackageName = "me.jappie.prrrrrrrrr";
   extraJniBridge = [ ../cbits/jni_extras.c ];
   extraNdkCompile = ndkCc: sysroot: ''
-    ${ndkCc} -c -fPIC -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION \
-      -I${sysroot}/usr/include -o sqlite3.o ${../cbits/sqlite3.c}
     ${ndkCc} -c -fPIC -I${sysroot}/usr/include \
       -o storage_helper.o ${../cbits/storage_helper.c}
   '';
@@ -25,6 +23,8 @@ lib.mkAndroidLib {
     cp ${../src/GymTracker/Storage.hs} GymTracker/Storage.hs
     cp ${../src/GymTracker/Views.hs} GymTracker/Views.hs
   '';
-  extraLinkObjects = [ "$(pwd)/sqlite3.o" "$(pwd)/storage_helper.o" ];
+  # direct-sqlite bundles its own sqlite3 amalgamation via cabal c-sources;
+  # the Android linker picks up -lsqlite from the system image automatically.
+  extraLinkObjects = [ "$(pwd)/storage_helper.o" ];
   extraGhcIncludeDirs = [ ../cbits ];
 }
