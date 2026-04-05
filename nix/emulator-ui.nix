@@ -300,6 +300,15 @@ done
 
 if [ $RENDER_DONE -eq 0 ]; then
     echo "WARNING: setRoot not found in logcat after ''${POLL_TIMEOUT}s"
+    echo "=== Early logcat diagnostic ==="
+    echo "--- Crash / library-load messages ---"
+    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|CRASH|SIGNAL|System.err" \
+      "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
+    echo "--- All UIBridge messages ---"
+    grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
+    echo "--- Last 30 logcat lines ---"
+    tail -30 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
+    echo "=== End early logcat diagnostic ==="
 fi
 
 # Extra settle time for the view hierarchy to stabilize
@@ -424,7 +433,8 @@ echo "=== Step 5: Enter weight '100' ==="
 # Tap the EditText field to focus it
 if dump_ui "$UI_DUMP"; then
     # Split XML into individual elements, then find the EditText node
-    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1)
+    # Use || true so grep returning no-match (exit 1) doesn't kill the script
+    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1) || true
     if [ -n "$EDIT_LINE" ]; then
         EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
         if [ -n "$EDIT_COORDS" ]; then
