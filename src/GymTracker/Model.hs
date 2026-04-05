@@ -4,6 +4,10 @@ module GymTracker.Model
   ( Exercise(..)
   , allExercises
   , exerciseName
+  , ExerciseCategory(..)
+  , allCategories
+  , categoryName
+  , exerciseCategory
   , Screen(..)
   , AppState(..)
   , newAppState
@@ -36,18 +40,54 @@ allExercises = [minBound .. maxBound]
 
 -- | Human-readable name for an exercise.
 exerciseName :: Exercise -> Text
-exerciseName Snatch       = "Snatch"
-exerciseName CleanAndJerk = "Clean & Jerk"
-exerciseName Clean        = "Clean"
-exerciseName PowerClean   = "Power Clean"
-exerciseName PowerSnatch  = "Power Snatch"
-exerciseName FrontSquat   = "Front Squat"
-exerciseName BackSquat    = "Back Squat"
+exerciseName Snatch        = "Snatch"
+exerciseName CleanAndJerk  = "Clean & Jerk"
+exerciseName Clean         = "Clean"
+exerciseName PowerClean    = "Power Clean"
+exerciseName PowerSnatch   = "Power Snatch"
+exerciseName FrontSquat    = "Front Squat"
+exerciseName BackSquat     = "Back Squat"
 exerciseName OverheadSquat = "Overhead Squat"
-exerciseName Deadlift     = "Deadlift"
-exerciseName PushPress    = "Push Press"
-exerciseName PushJerk     = "Push Jerk"
-exerciseName SquatJerk    = "Squat Jerk"
+exerciseName Deadlift      = "Deadlift"
+exerciseName PushPress     = "Push Press"
+exerciseName PushJerk      = "Push Jerk"
+exerciseName SquatJerk     = "Squat Jerk"
+
+-- | Grouping categories for the exercise list screen.
+data ExerciseCategory
+  = Snatches
+  | Cleans
+  | JerksAndPresses
+  | Squats
+  | Pulls
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+-- | All categories in enumeration order.
+allCategories :: [ExerciseCategory]
+allCategories = [minBound .. maxBound]
+
+-- | Human-readable name for a category.
+categoryName :: ExerciseCategory -> Text
+categoryName Snatches        = "Snatches"
+categoryName Cleans          = "Cleans"
+categoryName JerksAndPresses = "Jerks & Presses"
+categoryName Squats          = "Squats"
+categoryName Pulls           = "Pulls"
+
+-- | The category an exercise belongs to.
+exerciseCategory :: Exercise -> ExerciseCategory
+exerciseCategory Snatch        = Snatches
+exerciseCategory PowerSnatch   = Snatches
+exerciseCategory Clean         = Cleans
+exerciseCategory PowerClean    = Cleans
+exerciseCategory CleanAndJerk  = Cleans
+exerciseCategory PushPress     = JerksAndPresses
+exerciseCategory PushJerk      = JerksAndPresses
+exerciseCategory SquatJerk     = JerksAndPresses
+exerciseCategory FrontSquat    = Squats
+exerciseCategory BackSquat     = Squats
+exerciseCategory OverheadSquat = Squats
+exerciseCategory Deadlift      = Pulls
 
 -- | Application screens.
 data Screen
@@ -60,6 +100,7 @@ data AppState = AppState
   { stScreen    :: IORef Screen
   , stRecords   :: IORef (Map Exercise Double)
   , stInputText :: IORef Text
+  , stHistory   :: IORef [(Double, Text)]  -- ^ weight + timestamp, newest first
   }
 
 -- | Create a fresh 'AppState' with the given initial records.
@@ -68,8 +109,10 @@ newAppState initialRecords = do
   screen    <- newIORef ExerciseList
   records   <- newIORef initialRecords
   inputText <- newIORef ""
+  history   <- newIORef []
   pure AppState
     { stScreen    = screen
     , stRecords   = records
     , stInputText = inputText
+    , stHistory   = history
     }

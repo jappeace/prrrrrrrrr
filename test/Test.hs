@@ -12,11 +12,15 @@ import GymTracker.Model
   ( Exercise(..)
   , Screen(..)
   , AppState(..)
+  , ExerciseCategory(..)
   , allExercises
+  , allCategories
+  , categoryName
+  , exerciseCategory
   , exerciseName
   , newAppState
   )
-import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord)
+import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory)
 import GymTracker.Views (exerciseListView, enterPRView, appRootView)
 import HaskellMobile.Widget (Widget(..))
 
@@ -37,6 +41,32 @@ modelTests = testGroup "Model"
 
   , testCase "allExercises covers Enum range" $
       allExercises @?= [Snatch .. SquatJerk]
+
+  , testCase "all exercises are assigned to exactly one category" $
+      let exercisesPerCategory = map (\cat -> length (filter (\ex -> exerciseCategory ex == cat) allExercises)) allCategories
+      in sum exercisesPerCategory @?= length allExercises
+
+  , testCase "Snatch and PowerSnatch are in Snatches" $ do
+      exerciseCategory Snatch      @?= Snatches
+      exerciseCategory PowerSnatch @?= Snatches
+
+  , testCase "Clean, PowerClean, CleanAndJerk are in Cleans" $ do
+      exerciseCategory Clean       @?= Cleans
+      exerciseCategory PowerClean  @?= Cleans
+      exerciseCategory CleanAndJerk @?= Cleans
+
+  , testCase "PushPress, PushJerk, SquatJerk are in JerksAndPresses" $ do
+      exerciseCategory PushPress @?= JerksAndPresses
+      exerciseCategory PushJerk  @?= JerksAndPresses
+      exerciseCategory SquatJerk @?= JerksAndPresses
+
+  , testCase "FrontSquat, BackSquat, OverheadSquat are in Squats" $ do
+      exerciseCategory FrontSquat    @?= Squats
+      exerciseCategory BackSquat     @?= Squats
+      exerciseCategory OverheadSquat @?= Squats
+
+  , testCase "Deadlift is in Pulls" $
+      exerciseCategory Deadlift @?= Pulls
   ]
   where
     nub :: Eq a => [a] -> [a]
@@ -63,6 +93,26 @@ storageTests = sequentialTestGroup "Storage" AllFinish
         saveRecord db BackSquat 110.0
         records <- loadRecords db
         Map.lookup BackSquat records @?= Just 110.0
+
+  , testCase "loadExerciseHistory returns entry after saveRecord" $ do
+      withDatabase $ \db -> do
+        initDB db
+        saveRecord db FrontSquat 90.0
+        history <- loadExerciseHistory db FrontSquat
+        case history of
+          [] -> assertFailure "expected at least one history entry"
+          ((weight, _timestamp) : _) -> weight @?= 90.0
+
+  , testCase "multiple saveRecord calls accumulate in history newest first" $ do
+      withDatabase $ \db -> do
+        initDB db
+        saveRecord db PushPress 60.0
+        saveRecord db PushPress 65.0
+        saveRecord db PushPress 70.0
+        history <- loadExerciseHistory db PushPress
+        let weights = map fst history
+        -- newest first: 70, 65, 60 (plus any from prior test runs)
+        take 3 weights @?= [70.0, 65.0, 60.0]
   ]
 
 viewTests :: TestTree
@@ -72,24 +122,45 @@ viewTests = testGroup "Views"
       widget <- exerciseListView st
       case widget of
         Column children ->
-          -- 1 title + 12 exercise buttons
-          length children @?= 13
+          -- 1 title + 5 category headers + 12 exercise buttons = 18
+          length children @?= 18
         Text _          -> assertFailure "expected Column, got Text"
         Button _ _      -> assertFailure "expected Column, got Button"
         TextInput _ _ _ -> assertFailure "expected Column, got TextInput"
         Row _           -> assertFailure "expected Column, got Row"
 
-  , testCase "enterPRView returns Column with input and buttons" $ do
+  , testCase "exerciseListView second child is Text Snatches category header" $ do
+      st <- newAppState Map.empty
+      widget <- exerciseListView st
+      case widget of
+        Column (_ : secondChild : _) ->
+          case secondChild of
+            Text label -> label @?= categoryName Snatches
+            _          -> assertFailure "expected Text for category header"
+        Column _ -> assertFailure "expected at least 2 children"
+        _        -> assertFailure "expected Column"
+
+  , testCase "enterPRView returns Column with input, buttons, and history section" $ do
       st <- newAppState Map.empty
       widget <- enterPRView st Snatch
       case widget of
         Column children ->
-          -- Title + TextInput + Row of buttons = 3
-          length children @?= 3
+          -- Title + TextInput + Row of buttons + Column history = 4
+          length children @?= 4
         Text _          -> assertFailure "expected Column, got Text"
         Button _ _      -> assertFailure "expected Column, got Button"
         TextInput _ _ _ -> assertFailure "expected Column, got TextInput"
         Row _           -> assertFailure "expected Column, got Row"
+
+  , testCase "enterPRView with history shows entries in 4th Column child" $ do
+      st <- newAppState Map.empty
+      writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00"), (90.0, "2025-12-01 10:00:00")]
+      widget <- enterPRView st Snatch
+      case widget of
+        Column [_, _, _, Column historyWidgets] ->
+          length historyWidgets @?= 2
+        Column _ -> assertFailure "expected 4 children with history Column as 4th"
+        _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
       st <- newAppState Map.empty

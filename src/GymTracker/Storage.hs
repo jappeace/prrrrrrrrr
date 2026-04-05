@@ -9,6 +9,7 @@ module GymTracker.Storage
   , initDB
   , loadRecords
   , saveRecord
+  , loadExerciseHistory
   )
 where
 
@@ -86,13 +87,18 @@ withDatabase action = do
   _ <- c_sqlite3_close db
   pure result
 
--- | Create the pr_records table if it doesn't exist.
+-- | Create the pr_records and pr_history tables if they don't exist.
 initDB :: Ptr Sqlite3 -> IO ()
-initDB db =
+initDB db = do
   withCString "CREATE TABLE IF NOT EXISTS pr_records (exercise TEXT PRIMARY KEY, weight_kg REAL NOT NULL)" $ \sql -> do
     rc <- c_sqlite3_exec db sql nullFunPtr nullPtr nullPtr
     if rc /= 0
-      then error $ "initDB failed with code: " ++ show rc
+      then error $ "initDB pr_records failed with code: " ++ show rc
+      else pure ()
+  withCString "CREATE TABLE IF NOT EXISTS pr_history (id INTEGER PRIMARY KEY AUTOINCREMENT, exercise TEXT NOT NULL, weight_kg REAL NOT NULL, recorded_at TEXT NOT NULL DEFAULT (datetime('now')))" $ \sql -> do
+    rc <- c_sqlite3_exec db sql nullFunPtr nullPtr nullPtr
+    if rc /= 0
+      then error $ "initDB pr_history failed with code: " ++ show rc
       else pure ()
 
 -- | Load all PR records from the database.
@@ -124,24 +130,74 @@ loadRecords db = do
           loadRows stmt ref
         else pure ()
 
--- | Save a single PR record (upsert).
+-- | Save a single PR record (upsert) and append to history.
 -- Uses SQLITE_STATIC for bind — the CString from withCString
 -- lives until after sqlite3_step returns, so this is safe.
 saveRecord :: Ptr Sqlite3 -> Exercise -> Double -> IO ()
-saveRecord db exercise weight =
+saveRecord db exercise weight = do
+  upsertCurrent
+  insertHistory
+  where
+    upsertCurrent :: IO ()
+    upsertCurrent =
+      alloca $ \stmtPtr -> do
+        rc <- withCString "INSERT OR REPLACE INTO pr_records (exercise, weight_kg) VALUES (?, ?)" $ \sql ->
+          c_sqlite3_prepare_v2 db sql (-1) stmtPtr nullPtr
+        if rc /= 0
+          then pure ()
+          else do
+            stmt <- peek stmtPtr
+            withCString (unpack (exerciseName exercise)) $ \cname -> do
+              _ <- c_sqlite3_bind_text stmt 1 cname (-1) nullPtr
+              _ <- c_sqlite3_bind_double stmt 2 weight
+              _ <- c_sqlite3_step stmt
+              _ <- c_sqlite3_finalize stmt
+              pure ()
+
+    insertHistory :: IO ()
+    insertHistory =
+      alloca $ \stmtPtr -> do
+        rc <- withCString "INSERT INTO pr_history (exercise, weight_kg) VALUES (?, ?)" $ \sql ->
+          c_sqlite3_prepare_v2 db sql (-1) stmtPtr nullPtr
+        if rc /= 0
+          then pure ()
+          else do
+            stmt <- peek stmtPtr
+            withCString (unpack (exerciseName exercise)) $ \cname -> do
+              _ <- c_sqlite3_bind_text stmt 1 cname (-1) nullPtr
+              _ <- c_sqlite3_bind_double stmt 2 weight
+              _ <- c_sqlite3_step stmt
+              _ <- c_sqlite3_finalize stmt
+              pure ()
+
+-- | Load all history entries for an exercise, newest first.
+loadExerciseHistory :: Ptr Sqlite3 -> Exercise -> IO [(Double, Text)]
+loadExerciseHistory db exercise = do
+  ref <- newIORef []
   alloca $ \stmtPtr -> do
-    rc <- withCString "INSERT OR REPLACE INTO pr_records (exercise, weight_kg) VALUES (?, ?)" $ \sql ->
+    rc <- withCString "SELECT weight_kg, recorded_at FROM pr_history WHERE exercise = ? ORDER BY id ASC" $ \sql ->
       c_sqlite3_prepare_v2 db sql (-1) stmtPtr nullPtr
     if rc /= 0
-      then pure ()
+      then pure []
       else do
         stmt <- peek stmtPtr
         withCString (unpack (exerciseName exercise)) $ \cname -> do
           _ <- c_sqlite3_bind_text stmt 1 cname (-1) nullPtr
-          _ <- c_sqlite3_bind_double stmt 2 weight
-          _ <- c_sqlite3_step stmt
-          _ <- c_sqlite3_finalize stmt
-          pure ()
+          loadRows stmt ref
+        _ <- c_sqlite3_finalize stmt
+        readIORef ref
+  where
+    loadRows :: Ptr Sqlite3Stmt -> IORef [(Double, Text)] -> IO ()
+    loadRows stmt ref = do
+      rc <- c_sqlite3_step stmt
+      if rc == sqliteRow
+        then do
+          weight    <- c_sqlite3_column_double stmt 0
+          tsPtr     <- c_sqlite3_column_text stmt 1
+          timestamp <- peekCString tsPtr
+          modifyIORef' ref ((weight, pack timestamp) :)
+          loadRows stmt ref
+        else pure ()
 
 -- | Parse an exercise name back to its constructor.
 nameToExercise :: Text -> Maybe Exercise
