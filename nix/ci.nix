@@ -18,6 +18,8 @@ let
         ps.containers
         ps.tasty
         ps.tasty-hunit
+        ps.sqlite-simple
+        ps.toml-parser
       ]))
       pkgs.cabal-install
     ];
