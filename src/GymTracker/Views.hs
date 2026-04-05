@@ -43,7 +43,7 @@ exerciseLabel records ex =
 exercisesInCategory :: ExerciseCategory -> [Exercise]
 exercisesInCategory cat = filter (\ex -> exerciseCategory ex == cat) allExercises
 
--- | Exercise list screen: shows exercises grouped by category.
+-- | Exercise list screen: shows exercises grouped by category inside a scroll view.
 exerciseListView :: AppState -> IO Widget
 exerciseListView st = do
   records <- readIORef (stRecords st)
@@ -51,7 +51,7 @@ exerciseListView st = do
         Text (categoryName cat)
           : map (exerciseButton st records) (exercisesInCategory cat)
       children = Text "PRRRRRRRRR" : concatMap categorySection allCategories
-  pure $ Column children
+  pure $ ScrollView [Column children]
 
 -- | A single exercise button that navigates to the EnterPR screen and loads history.
 exerciseButton :: AppState -> Map Exercise Double -> Exercise -> Widget
