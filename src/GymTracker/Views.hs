@@ -24,7 +24,7 @@ import GymTracker.Model
   , ExerciseCategory
   )
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
-import HaskellMobile.Widget (Widget(..))
+import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..))
 
 -- | Format a weight value for display.
 formatWeight :: Double -> Text
@@ -48,19 +48,24 @@ exerciseListView :: AppState -> IO Widget
 exerciseListView st = do
   records <- readIORef (stRecords st)
   let categorySection cat =
-        Text (categoryName cat)
+        Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing }
           : map (exerciseButton st records) (exercisesInCategory cat)
-      children = Text "PRRRRRRRRR" : concatMap categorySection allCategories
+      children = Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing }
+          : concatMap categorySection allCategories
   pure $ ScrollView [Column children]
 
 -- | A single exercise button that navigates to the EnterPR screen and loads history.
 exerciseButton :: AppState -> Map Exercise Double -> Exercise -> Widget
 exerciseButton st records ex =
-  Button (exerciseLabel records ex) $ do
-    history <- withDatabase $ \db -> loadExerciseHistory db ex
-    writeIORef (stHistory st) history
-    writeIORef (stScreen st) (EnterPR ex)
-    writeIORef (stInputText st) ""
+  Button ButtonConfig
+    { bcLabel = exerciseLabel records ex
+    , bcAction = do
+        history <- withDatabase $ \db -> loadExerciseHistory db ex
+        writeIORef (stHistory st) history
+        writeIORef (stScreen st) (EnterPR ex)
+        writeIORef (stInputText st) ""
+    , bcFontConfig = Nothing
+    }
 
 -- | Enter PR screen: text input for weight + save/back buttons + history log.
 enterPRView :: AppState -> Exercise -> IO Widget
@@ -69,18 +74,27 @@ enterPRView st ex = do
   history  <- readIORef (stHistory st)
   let historyWidgets = map historyEntry history
   pure $ Column
-    [ Text ("Set PR: " <> exerciseName ex)
-    , TextInput "Weight (kg)" inputVal (\t -> writeIORef (stInputText st) t)
+    [ Text TextConfig { tcLabel = "Set PR: " <> exerciseName ex, tcFontConfig = Nothing }
+    , TextInput TextInputConfig
+        { tiInputType = InputText
+        , tiHint      = "Weight (kg)"
+        , tiValue     = inputVal
+        , tiOnChange  = \t -> writeIORef (stInputText st) t
+        , tiFontConfig = Nothing
+        }
     , Row
-        [ Button "Save" (savePR st ex)
-        , Button "Back" (writeIORef (stScreen st) ExerciseList)
+        [ Button ButtonConfig
+            { bcLabel = "Save", bcAction = savePR st ex, bcFontConfig = Nothing }
+        , Button ButtonConfig
+            { bcLabel = "Back", bcAction = writeIORef (stScreen st) ExerciseList, bcFontConfig = Nothing }
         ]
     , Column historyWidgets
     ]
 
 -- | Render a single history entry.
 historyEntry :: (Double, Text) -> Widget
-historyEntry (weight, timestamp) = Text (timestamp <> ": " <> formatWeight weight)
+historyEntry (weight, timestamp) = Text TextConfig
+  { tcLabel = timestamp <> ": " <> formatWeight weight, tcFontConfig = Nothing }
 
 -- | Attempt to parse the input and save the PR, then reload history without navigating away.
 -- Invalid input (empty, non-numeric, non-positive) is silently ignored.
