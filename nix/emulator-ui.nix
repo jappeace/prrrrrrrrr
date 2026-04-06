@@ -3,8 +3,8 @@
 # Boots an emulator, installs the APK, and verifies the full PR entry flow:
 #   1. The ExerciseList screen renders (title "PRRRRRRRRR", exercise buttons)
 #   2. Tapping "Snatch: No PR" navigates to the EnterPR screen
-#   3. Entering weight "100" and tapping "Save" returns to ExerciseList
-#   4. The exercise list shows "Snatch: 100.0 kg" — the PR was saved
+#   3. Entering weight "100" and tapping "Save" stays on EnterPR and shows history
+#   4. Tapping "Back" returns to ExerciseList showing "Snatch: 100.0 kg"
 #
 # Independent from nix/emulator.nix (lifecycle test) — can run in parallel.
 #
@@ -300,6 +300,15 @@ done
 
 if [ $RENDER_DONE -eq 0 ]; then
     echo "WARNING: setRoot not found in logcat after ''${POLL_TIMEOUT}s"
+    echo "=== Early logcat diagnostic ==="
+    echo "--- Crash / library-load messages ---"
+    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|CRASH|SIGNAL|System.err" \
+      "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
+    echo "--- All UIBridge messages ---"
+    grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
+    echo "--- Last 30 logcat lines ---"
+    tail -30 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
+    echo "=== End early logcat diagnostic ==="
 fi
 
 # Extra settle time for the view hierarchy to stabilize
@@ -424,7 +433,8 @@ echo "=== Step 5: Enter weight '100' ==="
 # Tap the EditText field to focus it
 if dump_ui "$UI_DUMP"; then
     # Split XML into individual elements, then find the EditText node
-    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1)
+    # Use || true so grep returning no-match (exit 1) doesn't kill the script
+    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1) || true
     if [ -n "$EDIT_LINE" ]; then
         EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
         if [ -n "$EDIT_COORDS" ]; then
@@ -465,15 +475,49 @@ else
     EXIT_CODE=1
 fi
 
+echo "Waiting for re-render (Save stays on EnterPR with history)..."
+sleep 5
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+
+# ============================================================
+# Step 7: Verify EnterPR shows history after Save
+# (Save stays on EnterPR and reloads history rather than navigating away)
+# ============================================================
+echo ""
+echo "=== Step 7: Verify history rendered after Save ==="
+
+if grep -q 'setStrProp.*100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
+    echo "PASS: History entry — '100.0 kg' in logcat after Save"
+else
+    echo "FAIL: History entry — '100.0 kg' in logcat after Save"
+    EXIT_CODE=1
+fi
+
+# ============================================================
+# Step 8: Tap "Back" to return to ExerciseList
+# ============================================================
+echo ""
+echo "=== Step 8: Tap 'Back' to return to ExerciseList ==="
+
+if dump_ui "$UI_DUMP"; then
+    if ! tap_element "$UI_DUMP" "Back"; then
+        echo "FAIL: Could not tap 'Back' button"
+        EXIT_CODE=1
+    fi
+else
+    echo "FAIL: Could not dump UI to find Back button"
+    EXIT_CODE=1
+fi
+
 echo "Waiting for re-render back to ExerciseList..."
 sleep 5
 "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
 
 # ============================================================
-# Step 7: Verify updated ExerciseList
+# Step 9: Verify updated ExerciseList
 # ============================================================
 echo ""
-echo "=== Step 7: Verify updated ExerciseList ==="
+echo "=== Step 9: Verify updated ExerciseList ==="
 
 if grep -q 'setStrProp.*Snatch: 100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
     echo "PASS: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"

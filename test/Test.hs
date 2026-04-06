@@ -117,28 +117,26 @@ storageTests = sequentialTestGroup "Storage" AllFinish
 
 viewTests :: TestTree
 viewTests = testGroup "Views"
-  [ testCase "exerciseListView returns Column with correct child count" $ do
+  [ testCase "exerciseListView returns ScrollView wrapping Column with correct child count" $ do
       st <- newAppState Map.empty
       widget <- exerciseListView st
       case widget of
-        Column children ->
+        ScrollView [Column children] ->
           -- 1 title + 5 category headers + 12 exercise buttons = 18
           length children @?= 18
-        Text _          -> assertFailure "expected Column, got Text"
-        Button _ _      -> assertFailure "expected Column, got Button"
-        TextInput _ _ _ -> assertFailure "expected Column, got TextInput"
-        Row _           -> assertFailure "expected Column, got Row"
+        ScrollView _ -> assertFailure "expected ScrollView with single Column child"
+        _            -> assertFailure "expected ScrollView"
 
-  , testCase "exerciseListView second child is Text Snatches category header" $ do
+  , testCase "exerciseListView second Column child is Text Snatches category header" $ do
       st <- newAppState Map.empty
       widget <- exerciseListView st
       case widget of
-        Column (_ : secondChild : _) ->
+        ScrollView [Column (_ : secondChild : _)] ->
           case secondChild of
             Text label -> label @?= categoryName Snatches
             _          -> assertFailure "expected Text for category header"
-        Column _ -> assertFailure "expected at least 2 children"
-        _        -> assertFailure "expected Column"
+        ScrollView _ -> assertFailure "expected at least 2 children in Column"
+        _            -> assertFailure "expected ScrollView"
 
   , testCase "enterPRView returns Column with input, buttons, and history section" $ do
       st <- newAppState Map.empty
@@ -151,6 +149,7 @@ viewTests = testGroup "Views"
         Button _ _      -> assertFailure "expected Column, got Button"
         TextInput _ _ _ -> assertFailure "expected Column, got TextInput"
         Row _           -> assertFailure "expected Column, got Row"
+        ScrollView _    -> assertFailure "expected Column, got ScrollView"
 
   , testCase "enterPRView with history shows entries in 4th Column child" $ do
       st <- newAppState Map.empty
@@ -166,13 +165,10 @@ viewTests = testGroup "Views"
       st <- newAppState Map.empty
       widget <- appRootView st
       case widget of
-        Column (Text title : _) ->
+        ScrollView [Column (Text title : _)] ->
           title @?= "PRRRRRRRRR"
-        Column _        -> assertFailure "expected title as first child"
-        Text _          -> assertFailure "expected Column"
-        Button _ _      -> assertFailure "expected Column"
-        TextInput _ _ _ -> assertFailure "expected Column"
-        Row _           -> assertFailure "expected Column"
+        ScrollView _ -> assertFailure "expected ScrollView with Column as first child"
+        _            -> assertFailure "expected ScrollView"
 
   , testCase "screen navigation: list -> enter PR -> back" $ do
       st <- newAppState Map.empty
