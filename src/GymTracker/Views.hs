@@ -80,7 +80,7 @@ enterPRView st ex = do
 
 -- | Render a single history entry.
 historyEntry :: (Double, Text) -> Widget
-historyEntry (weight, timestamp) = Text (formatWeight weight <> " — " <> timestamp)
+historyEntry (weight, timestamp) = Text (timestamp <> ": " <> formatWeight weight)
 
 -- | Attempt to parse the input and save the PR, then reload history without navigating away.
 -- Invalid input (empty, non-numeric, non-positive) is silently ignored.
