@@ -22,7 +22,7 @@ import GymTracker.Model
   )
 import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory)
 import GymTracker.Views (exerciseListView, enterPRView, appRootView)
-import HaskellMobile.Widget (Widget(..))
+import HaskellMobile.Widget (TextConfig(..), Widget(..))
 
 main :: IO ()
 main = defaultMain tests
@@ -133,8 +133,8 @@ viewTests = testGroup "Views"
       case widget of
         ScrollView [Column (_ : secondChild : _)] ->
           case secondChild of
-            Text label -> label @?= categoryName Snatches
-            _          -> assertFailure "expected Text for category header"
+            Text config -> tcLabel config @?= categoryName Snatches
+            _           -> assertFailure "expected Text for category header"
         ScrollView _ -> assertFailure "expected at least 2 children in Column"
         _            -> assertFailure "expected ScrollView"
 
@@ -146,10 +146,11 @@ viewTests = testGroup "Views"
           -- Title + TextInput + Row of buttons + Column history = 4
           length children @?= 4
         Text _          -> assertFailure "expected Column, got Text"
-        Button _ _      -> assertFailure "expected Column, got Button"
-        TextInput _ _ _ -> assertFailure "expected Column, got TextInput"
+        Button _        -> assertFailure "expected Column, got Button"
+        TextInput _     -> assertFailure "expected Column, got TextInput"
         Row _           -> assertFailure "expected Column, got Row"
         ScrollView _    -> assertFailure "expected Column, got ScrollView"
+        Styled _ _      -> assertFailure "expected Column, got Styled"
 
   , testCase "enterPRView with history shows entries in 4th Column child" $ do
       st <- newAppState Map.empty
@@ -165,8 +166,8 @@ viewTests = testGroup "Views"
       st <- newAppState Map.empty
       widget <- appRootView st
       case widget of
-        ScrollView [Column (Text title : _)] ->
-          title @?= "PRRRRRRRRR"
+        ScrollView [Column (Text config : _)] ->
+          tcLabel config @?= "PRRRRRRRRR"
         ScrollView _ -> assertFailure "expected ScrollView with Column as first child"
         _            -> assertFailure "expected ScrollView"
 
