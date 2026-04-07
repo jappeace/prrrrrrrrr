@@ -1,10 +1,11 @@
 # Android shared library — uses haskell-mobile's lib.nix.
 { sources ? import ../npins
+, androidArch ? "aarch64"
 , mainModule ? ../app/MobileMain.hs
 }:
 let
   haskellMobileSrc = sources.haskell-mobile;
-  lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources; };
+  lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources androidArch; };
 in
 lib.mkAndroidLib {
   inherit haskellMobileSrc mainModule;
