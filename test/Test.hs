@@ -166,10 +166,11 @@ viewTests = testGroup "Views"
       st <- newAppState Map.empty
       widget <- appRootView st
       case widget of
-        ScrollView [Column (Text config : _)] ->
+        Styled _ (ScrollView [Column (Text config : _)]) ->
           tcLabel config @?= "PRRRRRRRRR"
-        ScrollView _ -> assertFailure "expected ScrollView with Column as first child"
-        _            -> assertFailure "expected ScrollView"
+        Styled _ (ScrollView _) -> assertFailure "expected ScrollView with Column as first child"
+        Styled _ _              -> assertFailure "expected Styled wrapping ScrollView"
+        _                       -> assertFailure "expected Styled"
 
   , testCase "screen navigation: list -> enter PR -> back" $ do
       st <- newAppState Map.empty
