@@ -13,7 +13,7 @@ import System.IO.Unsafe (unsafePerformIO)
 mobileApp :: MobileApp
 mobileApp = MobileApp
   { maContext = loggingMobileContext
-  , maView = appRootView globalState
+  , maView = \_userState -> appRootView globalState
   }
 
 -- | Global application state, initialized once on first access.
