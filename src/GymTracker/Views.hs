@@ -24,7 +24,7 @@ import GymTracker.Model
   , ExerciseCategory
   )
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
-import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..))
+import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
 
 -- | Format a weight value for display.
 formatWeight :: Double -> Text
@@ -76,7 +76,7 @@ enterPRView st ex = do
   pure $ Column
     [ Text TextConfig { tcLabel = "Set PR: " <> exerciseName ex, tcFontConfig = Nothing }
     , TextInput TextInputConfig
-        { tiInputType = InputText
+        { tiInputType = InputNumber
         , tiHint      = "Weight (kg)"
         , tiValue     = inputVal
         , tiOnChange  = \t -> writeIORef (stInputText st) t
@@ -123,10 +123,15 @@ parseWeight t =
     [(w, "")] | w > 0 -> Just w
     _                  -> Nothing
 
--- | Root view: dispatches to the correct screen.
+-- | Padding for round watch screens — keeps content away from curved edges.
+roundScreenPadding :: WidgetStyle
+roundScreenPadding = defaultStyle { wsPadding = Just 24 }
+
+-- | Root view: dispatches to the correct screen, padded for round displays.
 appRootView :: AppState -> IO Widget
 appRootView st = do
   screen <- readIORef (stScreen st)
-  case screen of
+  inner <- case screen of
     ExerciseList -> exerciseListView st
     EnterPR ex   -> enterPRView st ex
+  pure $ Styled roundScreenPadding inner
