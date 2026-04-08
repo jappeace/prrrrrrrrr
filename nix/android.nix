@@ -128,7 +128,7 @@ in
 lib.mkAndroidLib {
   inherit haskellMobileSrc mainModule crossDeps;
   pname = "prrrrrrrrr-android";
-  soName = "libprrrrrrrrr.so";
+  soName = "libhaskellmobile.so";
   javaPackageName = "me.jappie.prrrrrrrrr";
   extraJniBridge = [ ../cbits/jni_extras.c ];
   extraNdkCompile = ndkCc: sysroot: ''
