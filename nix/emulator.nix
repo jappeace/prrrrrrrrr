@@ -222,7 +222,7 @@ POLL_ELAPSED=0
 RENDER_DONE=0
 
 while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
-    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true || true
     if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
         RENDER_DONE=1
         echo "Initial render detected after ~''${POLL_ELAPSED}s"
@@ -240,7 +240,7 @@ fi
 sleep 5
 
 # Capture final logcat
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 # --- Verify lifecycle ---
 echo ""
