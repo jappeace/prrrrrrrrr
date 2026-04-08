@@ -9,6 +9,7 @@ in
 lib.mkApk {
   sharedLibs = [{ lib = sharedLib; inherit abiDir; }];
   androidSrc = ../android;
+  baseJavaSrc = "${haskellMobileSrc}/android/java";
   apkName = "prrrrrrrrr.apk";
   name = "prrrrrrrrr-apk";
 }
