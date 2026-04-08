@@ -19,7 +19,7 @@ let
     platformVersions = [ "34" ];
     includeEmulator = true;
     includeSystemImages = true;
-    systemImageTypes = [ "google_apis_playstore" ];
+    systemImageTypes = [ "google_apis" ];
     abiVersions = [ "x86_64" ];
     cmdLineToolsVersion = "8.0";
   };
@@ -28,7 +28,7 @@ let
   sdkRoot = "${sdk}/libexec/android-sdk";
 
   platformVersion = "34";
-  systemImageType = "google_apis_playstore";
+  systemImageType = "google_apis";
   abiVersion = "x86_64";
   imagePackage = "system-images;android-${platformVersion};${systemImageType};${abiVersion}";
 
