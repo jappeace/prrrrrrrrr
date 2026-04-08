@@ -150,6 +150,7 @@ viewTests = testGroup "Views"
         TextInput _     -> assertFailure "expected Column, got TextInput"
         Row _           -> assertFailure "expected Column, got Row"
         ScrollView _    -> assertFailure "expected Column, got ScrollView"
+        Image _         -> assertFailure "expected Column, got Image"
         Styled _ _      -> assertFailure "expected Column, got Styled"
 
   , testCase "enterPRView with history shows entries in 4th Column child" $ do
