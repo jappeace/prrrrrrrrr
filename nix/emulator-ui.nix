@@ -288,7 +288,7 @@ POLL_ELAPSED=0
 RENDER_DONE=0
 
 while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
-    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true || true
     if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
         RENDER_DONE=1
         echo "Initial render detected after ~''${POLL_ELAPSED}s"
@@ -376,7 +376,7 @@ fi
 
 echo "Waiting for re-render..."
 sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 # ============================================================
 # Step 4: Verify EnterPR screen
@@ -477,7 +477,7 @@ fi
 
 echo "Waiting for re-render (Save stays on EnterPR with history)..."
 sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 # ============================================================
 # Step 7: Verify EnterPR shows history after Save
@@ -511,7 +511,7 @@ fi
 
 echo "Waiting for re-render back to ExerciseList..."
 sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 # ============================================================
 # Step 9: Verify updated ExerciseList
@@ -550,7 +550,7 @@ fi
 # ============================================================
 
 # Final logcat dump
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 echo ""
 echo "=== Filtered logcat (UIBridge) ==="
