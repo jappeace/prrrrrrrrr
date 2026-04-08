@@ -70,14 +70,12 @@ library
   build-depends:
       haskell-mobile,
       text,
-      containers
+      containers,
+      sqlite-simple
   c-sources:
-      cbits/sqlite3.c
       cbits/storage_helper.c
   include-dirs:
       cbits
-  -- sqlite3 needs these
-  cc-options: -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION
 
 executable exe
   import: common-options
