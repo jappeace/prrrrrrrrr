@@ -9,10 +9,11 @@ let
 
   # --- Cross-compiled dependencies (inlined from cross-deps.nix) ---
   #
-  # We inline instead of calling cross-deps.nix because we need
-  # --allow-newer=Only:deepseq (Only-0.1 has deepseq < 1.5 but
-  # GHC 9.10's boot deepseq is 1.5.0.0), and cross-deps.nix doesn't
-  # expose extraCabalBuildFlags.
+  # Inlined because cross-deps.nix doesn't expose extraCabalBuildFlags,
+  # which we need for --allow-newer on boot packages. doJailBreak can't
+  # help: it modifies nix derivation flags, but mk-deps.nix builds from
+  # raw source tarballs via cabal — the original .cabal bounds still
+  # reach the solver unchanged. --allow-newer is the cabal equivalent.
 
   nixpkgsSrc = import "${haskellMobileSrc}/nix/patched-nixpkgs.nix" {
     nixpkgsSrc = sources.nixpkgs;
@@ -64,10 +65,12 @@ let
     extraCabalBuildFlags = [
       "--extra-lib-dirs=${androidPkgs.gmp}/lib"
       "--extra-lib-dirs=${androidPkgs.libffi}/lib"
-      # Hackage source tarballs have overly strict upper bounds on boot
-      # packages (deepseq, ghc-prim, etc.) but these versions are proven
-      # compatible — nixpkgs builds them natively with GHC 9.10.
-      "--allow-newer=all"
+      # Hackage tarballs have overly strict upper bounds on GHC boot
+      # packages. doJailBreak doesn't help here — it modifies nix derivation
+      # flags but mk-deps.nix builds from raw source tarballs via `cabal build`,
+      # so the tight .cabal bounds still reach the solver unchanged.
+      # --allow-newer on boot packages is the cabal-level equivalent.
+      "--allow-newer=base,deepseq,ghc-prim,bytestring,template-haskell,text,containers,transformers,array,time"
     ];
     derivationName = "haskell-mobile-cross-deps";
     perPackageFlags = { direct-sqlite = "-systemlib"; };
