@@ -7,11 +7,11 @@
         "owner": "jappeace-sloth",
         "repo": "haskell-mobile"
       },
-      "branch": "nixpkgs-haskell-deps",
+      "branch": "fix-collect-deps-transitive-walk",
       "submodules": false,
-      "revision": "c2821f8b862759be86144e90216492e968328685",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/c2821f8b862759be86144e90216492e968328685.tar.gz",
-      "hash": "sha256-G2Nmf3DaXZHihm3dnYgPUlpQSg+svcttabFFQ4GrXDQ="
+      "revision": "5442328eb037ae9d0ad6a7b31d4f2faa5746cac9",
+      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/5442328eb037ae9d0ad6a7b31d4f2faa5746cac9.tar.gz",
+      "hash": "sha256-Yw/hGh2ieaXkf35rg2zAF7+n1yU5y/2ZMnj3m9OKBOo="
     },
     "nixpkgs": {
       "type": "Channel",
