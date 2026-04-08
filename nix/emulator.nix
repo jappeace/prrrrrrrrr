@@ -124,7 +124,7 @@ echo "n" | "$AVDMANAGER" create avd \
     -p "$ANDROID_AVD_HOME/$DEVICE_NAME.avd"
 
 cat >> "$ANDROID_AVD_HOME/$DEVICE_NAME.avd/config.ini" << 'AVDCONF'
-hw.ramSize = 4096
+hw.ramSize = 6144
 hw.gpu.enabled = yes
 hw.gpu.mode = swiftshader_indirect
 disk.dataPartition.size = 2G
@@ -158,7 +158,7 @@ echo "=== Booting emulator ==="
     -port "$PORT" \
     -gpu swiftshader_indirect \
     -no-snapshot \
-    -memory 4096 \
+    -memory 6144 \
     $ACCEL_FLAG \
     &
 EMU_PID=$!
