@@ -19,7 +19,7 @@ let
     platformVersions = [ "34" ];
     includeEmulator = true;
     includeSystemImages = true;
-    systemImageTypes = [ "google_apis_playstore" ];
+    systemImageTypes = [ "google_apis" ];
     abiVersions = [ "x86_64" ];
     cmdLineToolsVersion = "8.0";
   };
@@ -28,7 +28,7 @@ let
   sdkRoot = "${sdk}/libexec/android-sdk";
 
   platformVersion = "34";
-  systemImageType = "google_apis_playstore";
+  systemImageType = "google_apis";
   abiVersion = "x86_64";
   imagePackage = "system-images;android-${platformVersion};${systemImageType};${abiVersion}";
 
@@ -124,7 +124,7 @@ echo "n" | "$AVDMANAGER" create avd \
     -p "$ANDROID_AVD_HOME/$DEVICE_NAME.avd"
 
 cat >> "$ANDROID_AVD_HOME/$DEVICE_NAME.avd/config.ini" << 'AVDCONF'
-hw.ramSize = 4096
+hw.ramSize = 6144
 hw.gpu.enabled = yes
 hw.gpu.mode = swiftshader_indirect
 disk.dataPartition.size = 2G
@@ -158,7 +158,7 @@ echo "=== Booting emulator ==="
     -port "$PORT" \
     -gpu swiftshader_indirect \
     -no-snapshot \
-    -memory 4096 \
+    -memory 6144 \
     $ACCEL_FLAG \
     &
 EMU_PID=$!
@@ -222,7 +222,7 @@ POLL_ELAPSED=0
 RENDER_DONE=0
 
 while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
-    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true || true
     if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
         RENDER_DONE=1
         echo "Initial render detected after ~''${POLL_ELAPSED}s"
@@ -240,7 +240,7 @@ fi
 sleep 5
 
 # Capture final logcat
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1
+"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
 
 # --- Verify lifecycle ---
 echo ""
