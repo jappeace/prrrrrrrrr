@@ -5,21 +5,32 @@
 }:
 let
   haskellMobileSrc = sources.haskell-mobile;
+  prSyncApiSrc = sources.pr-sync-api;
   lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources androidArch; };
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkAndroidLib.
   consumerCabal2Nix =
-    { mkDerivation, base, containers, lib, sqlite-simple, text }:
+    { mkDerivation, base, containers, lib, sqlite-simple, text
+    , pr-sync-api
+    , servant, servant-client, http-client, http-client-tls, time, aeson
+    }:
     mkDerivation {
       pname = "prrrrrrrrr";
       version = "0.1.0.0";
-      libraryHaskellDepends = [ base containers sqlite-simple text ];
+      libraryHaskellDepends = [
+        base containers sqlite-simple text
+        pr-sync-api
+        servant servant-client http-client http-client-tls time aeson
+      ];
       license = lib.licenses.mit;
     };
 
   crossDeps = import "${haskellMobileSrc}/nix/cross-deps.nix" {
     inherit sources androidArch consumerCabal2Nix;
+    hpkgs = self: super: {
+      pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
+    };
   };
 
 in
@@ -36,8 +47,10 @@ lib.mkAndroidLib {
   extraModuleCopy = ''
     mkdir -p GymTracker
     cp ${../src/HaskellMobile/App.hs} HaskellMobile/App.hs
+    cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
     cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
     cp ${../src/GymTracker/Storage.hs} GymTracker/Storage.hs
+    cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs
     cp ${../src/GymTracker/Views.hs} GymTracker/Views.hs
   '';
   extraLinkObjects = [ "$(pwd)/storage_helper.o" ];

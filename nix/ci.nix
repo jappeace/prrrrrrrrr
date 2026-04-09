@@ -5,6 +5,7 @@ let
     config.android_sdk.accept_license = true;
   };
   haskellMobileSrc = sources.haskell-mobile;
+  prSyncApiSrc = sources.pr-sync-api;
   hp = pkgs.haskellPackages;
 
   # Both packages built together so cabal can resolve the dependency
@@ -20,6 +21,12 @@ let
         ps.tasty-hunit
         ps.sqlite-simple
         ps.toml-parser
+        ps.servant
+        ps.servant-client
+        ps.http-client
+        ps.http-client-tls
+        ps.time
+        ps.aeson
       ]))
       pkgs.cabal-install
     ];
@@ -33,9 +40,11 @@ let
       cat > $HOME/.config/cabal/config <<'CABALEOF'
       CABALEOF
 
-      # Symlink haskell-mobile source for cabal.project
+      # Symlink haskell-mobile and pr-sync-api source for cabal.project
       rm -rf haskell-mobile-src
       ln -s ${haskellMobileSrc} haskell-mobile-src
+      rm -rf pr-sync-api-src
+      ln -s ${prSyncApiSrc} pr-sync-api-src
 
       # GHC already has all deps via ghcWithPackages.
       cabal build all --enable-tests --offline

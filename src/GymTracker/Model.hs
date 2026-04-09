@@ -4,6 +4,7 @@ module GymTracker.Model
   ( Exercise(..)
   , allExercises
   , exerciseName
+  , parseExercise
   , ExerciseCategory(..)
   , allCategories
   , categoryName
@@ -52,6 +53,13 @@ exerciseName Deadlift      = "Deadlift"
 exerciseName PushPress     = "Push Press"
 exerciseName PushJerk      = "Push Jerk"
 exerciseName SquatJerk     = "Squat Jerk"
+
+-- | Parse an exercise name back to its constructor.
+-- Returns 'Nothing' for unrecognised names.
+parseExercise :: Text -> Maybe Exercise
+parseExercise t = case filter (\ex -> exerciseName ex == t) allExercises of
+  [ex] -> Just ex
+  _    -> Nothing
 
 -- | Grouping categories for the exercise list screen.
 data ExerciseCategory
