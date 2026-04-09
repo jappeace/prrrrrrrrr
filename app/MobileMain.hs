@@ -6,10 +6,10 @@
 -- after @hs_init@ via the RTS API.
 module Main where
 
-import HaskellMobile (runMobileApp, platformLog)
+import HaskellMobile (startMobileApp, platformLog)
 import HaskellMobile.App (mobileApp)
 
 main :: IO ()
 main = do
-  runMobileApp mobileApp
+  _ <- startMobileApp mobileApp
   platformLog "prrrrrrrrr app registered"
