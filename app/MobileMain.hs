@@ -1,15 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Mobile entry point for prrrrrrrrr.
 --
--- Registers the gym tracker app so all FFI exports can find it.
+-- Returns the AppContext pointer to the platform bridge.
 -- The platform bridge (Android JNI, iOS Swift) runs this @main@
 -- after @hs_init@ via the RTS API.
 module Main where
 
-import HaskellMobile (startMobileApp, platformLog)
+import Foreign.Ptr (Ptr)
+import HaskellMobile (startMobileApp, platformLog, AppContext)
 import HaskellMobile.App (mobileApp)
 
-main :: IO ()
+main :: IO (Ptr AppContext)
 main = do
-  _ <- startMobileApp mobileApp
   platformLog "prrrrrrrrr app registered"
+  startMobileApp mobileApp
