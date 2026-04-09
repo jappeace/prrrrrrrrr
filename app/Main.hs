@@ -1,15 +1,16 @@
 module Main where
 
-import HaskellMobile (platformLog, runMobileApp, MobileApp(maContext))
+import HaskellMobile (platformLog, startMobileApp, AppContext(..), derefAppContext)
 import HaskellMobile.Lifecycle (LifecycleEvent(..), MobileContext(onLifecycle))
 import HaskellMobile.App (mobileApp)
 
 -- | Desktop entry point: registers the app, simulates lifecycle.
 main :: IO ()
 main = do
-  runMobileApp mobileApp
+  ctxPtr <- startMobileApp mobileApp
   platformLog "prrrrrrrrr starting..."
-  let listen = onLifecycle (maContext mobileApp)
+  appCtx <- derefAppContext ctxPtr
+  let listen = onLifecycle (acMobileContext appCtx)
   listen Create
   listen Start
   listen Resume
