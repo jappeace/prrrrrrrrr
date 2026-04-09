@@ -71,13 +71,14 @@ library
       src
   build-depends:
       haskell-mobile,
+      pr-sync-api,
       text,
       containers,
       sqlite-simple,
-      aeson,
+      servant,
+      servant-client,
       http-client,
       http-client-tls,
-      http-types,
       time
   c-sources:
       cbits/storage_helper.c
