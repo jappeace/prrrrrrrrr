@@ -3,7 +3,6 @@
 }:
 let
   haskellMobileSrc = sources.haskell-mobile;
-  prSyncApiSrc = sources.pr-sync-api;
   hp = pkgs.haskellPackages;
 in
 pkgs.mkShell {
@@ -15,10 +14,9 @@ pkgs.mkShell {
       ps.tasty-hunit
       ps.sqlite-simple
       ps.toml-parser
-      ps.servant
-      ps.servant-client
       ps.http-client
       ps.http-client-tls
+      ps.http-types
       ps.time
       ps.aeson
     ]))
@@ -30,8 +28,5 @@ pkgs.mkShell {
     if [ ! -e haskell-mobile-src ]; then
       ln -sf ${haskellMobileSrc} haskell-mobile-src
     fi
-    if [ ! -e pr-sync-api-src ]; then
-      ln -sf ${prSyncApiSrc} pr-sync-api-src
-    fi
-  '';
+'';
 }

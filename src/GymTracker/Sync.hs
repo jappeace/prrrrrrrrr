@@ -1,9 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 -- | Bidirectional sync with the pr-sync-api server.
+--
+-- Uses http-client + aeson directly (no servant-client) to avoid pulling
+-- generics-sop / Template Haskell into the Android cross-compilation,
+-- where the iserv-proxy-interpreter cannot run.
 --
 -- Runs asynchronously via 'forkIO' so it never blocks the UI.
 -- Network errors are caught and logged — the app remains fully offline-capable.
@@ -14,11 +19,14 @@ where
 
 import Control.Concurrent (forkIO)
 import Control.Exception (SomeException, catch)
+import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.IORef (writeIORef)
 import Data.Map.Strict qualified as Map
-import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
+import Data.Text.Encoding qualified as TE
+import Data.Time (UTCTime)
 import Database.SQLite.Simple (Connection)
+import GHC.Generics (Generic)
 import GymTracker.Config (serverBaseUrl, apiKey)
 import GymTracker.Model
   ( AppState(..)
@@ -35,24 +43,63 @@ import GymTracker.Storage
   , mergeHistoryEntry
   )
 import HaskellMobile.Lifecycle (platformLog)
-import Network.HTTP.Client (newManager)
-import Network.HTTP.Client.TLS (tlsManagerSettings)
-import PrSyncApi
-  ( ServerApi
-  , CurrentRecord(..)
-  , HistoryEntry(..)
-  , SyncRequest(..)
-  , SyncResponse(..)
-  , FullState(..)
+import Network.HTTP.Client
+  ( httpLbs
+  , method
+  , newManager
+  , parseRequest
+  , requestBody
+  , requestHeaders
+  , responseBody
+  , responseStatus
+  , RequestBody(RequestBodyLBS)
   )
-import Servant.API ((:<|>)(..))
-import Servant.Client (ClientM, client, mkClientEnv, parseBaseUrl, runClientM)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Types.Status (statusCode)
 
--- | Servant client functions derived from the API type.
-_healthClient :: ClientM Text
-syncClient :: Text -> SyncRequest -> ClientM SyncResponse
-recordsClient :: Text -> ClientM FullState
-_healthClient :<|> syncClient :<|> recordsClient = client (Proxy @ServerApi)
+------------------------------------------------------------------------
+-- API types — mirror pr-sync-api's JSON schema.
+-- Field names match exactly so Generic-derived aeson instances are compatible.
+------------------------------------------------------------------------
+
+data CurrentRecord = CurrentRecord
+  { recordExercise :: Text
+  , recordWeightKg :: Double
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data HistoryEntry = HistoryEntry
+  { historyExercise   :: Text
+  , historyWeightKg   :: Double
+  , historyRecordedAt :: UTCTime
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data SyncRequest = SyncRequest
+  { syncLastSyncTime   :: UTCTime
+  , syncCurrentRecords :: [CurrentRecord]
+  , syncHistory        :: [HistoryEntry]
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data SyncResponse = SyncResponse
+  { syncedCurrentRecords :: [CurrentRecord]
+  , syncedHistory        :: [HistoryEntry]
+  , syncTime             :: UTCTime
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (FromJSON, ToJSON)
+
+data FullState = FullState
+  { fullCurrentRecords :: [CurrentRecord]
+  , fullHistory        :: [HistoryEntry]
+  , fullSyncTime       :: UTCTime
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (FromJSON, ToJSON)
 
 -- | Decide between full or incremental sync, run in a background thread.
 -- All exceptions are caught and logged — sync failure never crashes the app.
@@ -68,19 +115,25 @@ triggerSync appState = do
 syncAction :: AppState -> IO ()
 syncAction appState = do
   manager <- newManager tlsManagerSettings
-  baseUrl <- parseBaseUrl serverBaseUrl
-  let clientEnv = mkClientEnv manager baseUrl
   withDatabase $ \conn -> do
     lastSync <- getLastSyncTime conn
     case lastSync of
       Nothing -> do
         platformLog "Sync: first boot, fetching full state"
-        result <- runClientM (recordsClient apiKey) clientEnv
-        case result of
-          Left err -> platformLog ("Sync GET /api/records failed: " <> pack (show err))
-          Right fullState -> do
-            mergeFullState conn appState fullState
-            platformLog "Sync: full state merged"
+        reqInit <- parseRequest (serverBaseUrl <> "/api/records")
+        let req = reqInit
+              { requestHeaders = [("X-Api-Key", TE.encodeUtf8 apiKey)]
+              }
+        resp <- httpLbs req manager
+        case statusCode (responseStatus resp) of
+          200 -> case eitherDecode (responseBody resp) of
+            Right fullState -> do
+              mergeFullState conn appState fullState
+              platformLog "Sync: full state merged"
+            Left decodeErr ->
+              platformLog ("Sync GET /api/records decode error: " <> pack decodeErr)
+          code ->
+            platformLog ("Sync GET /api/records failed with status " <> pack (show code))
       Just since -> do
         platformLog "Sync: incremental sync"
         records <- loadRecords conn
@@ -101,12 +154,25 @@ syncAction appState = do
               , syncCurrentRecords = currentRecords
               , syncHistory = historyEntries
               }
-        result <- runClientM (syncClient apiKey syncReq) clientEnv
-        case result of
-          Left err -> platformLog ("Sync POST /api/sync failed: " <> pack (show err))
-          Right syncResp -> do
-            mergeSyncResponse conn appState syncResp
-            platformLog "Sync: incremental merge done"
+        reqInit <- parseRequest (serverBaseUrl <> "/api/sync")
+        let req = reqInit
+              { method = "POST"
+              , requestHeaders =
+                  [ ("X-Api-Key", TE.encodeUtf8 apiKey)
+                  , ("Content-Type", "application/json")
+                  ]
+              , requestBody = RequestBodyLBS (encode syncReq)
+              }
+        resp <- httpLbs req manager
+        case statusCode (responseStatus resp) of
+          200 -> case eitherDecode (responseBody resp) of
+            Right syncResp -> do
+              mergeSyncResponse conn appState syncResp
+              platformLog "Sync: incremental merge done"
+            Left decodeErr ->
+              platformLog ("Sync POST /api/sync decode error: " <> pack decodeErr)
+          code ->
+            platformLog ("Sync POST /api/sync failed with status " <> pack (show code))
 
 -- | Merge a full state dump from the server into local DB and IORefs.
 mergeFullState :: Connection -> AppState -> FullState -> IO ()

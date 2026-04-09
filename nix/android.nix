@@ -5,32 +5,26 @@
 }:
 let
   haskellMobileSrc = sources.haskell-mobile;
-  prSyncApiSrc = sources.pr-sync-api;
   lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources androidArch; };
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkAndroidLib.
   consumerCabal2Nix =
     { mkDerivation, base, containers, lib, sqlite-simple, text
-    , pr-sync-api
-    , servant, servant-client, http-client, http-client-tls, time, aeson
+    , aeson, http-client, http-client-tls, http-types, time
     }:
     mkDerivation {
       pname = "prrrrrrrrr";
       version = "0.1.0.0";
       libraryHaskellDepends = [
         base containers sqlite-simple text
-        pr-sync-api
-        servant servant-client http-client http-client-tls time aeson
+        aeson http-client http-client-tls http-types time
       ];
       license = lib.licenses.mit;
     };
 
   crossDeps = import "${haskellMobileSrc}/nix/cross-deps.nix" {
     inherit sources androidArch consumerCabal2Nix;
-    hpkgs = self: super: {
-      pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
-    };
   };
 
 in
