@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace-sloth",
+        "owner": "jappeace",
         "repo": "haskell-mobile"
       },
-      "branch": "fix-boot-pkg-whole-archive",
+      "branch": "master",
       "submodules": false,
-      "revision": "1bcfed3f77bc3fb485cd8499aa4e09479ebf0460",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/1bcfed3f77bc3fb485cd8499aa4e09479ebf0460.tar.gz",
-      "hash": "sha256-iNrxvMv6x3+K3bxhZcXcNX7g8QbrshOP/Zym/eZa/es="
+      "revision": "4a26bd6a8e4a54df20b6416dd56ecec7097727eb",
+      "url": "https://github.com/jappeace/haskell-mobile/archive/4a26bd6a8e4a54df20b6416dd56ecec7097727eb.tar.gz",
+      "hash": "sha256-rFLPY15NHIJ2lt5xtMoCGyO5L0yLWwr8FDREYdwK+zU="
     },
     "nixpkgs": {
       "type": "Channel",
