@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Servant client backend using native HTTP bindings from haskell-mobile.
 --
 -- Routes servant requests through 'HaskellMobile.Http.performRequest'
