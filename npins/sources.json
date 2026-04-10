@@ -13,6 +13,19 @@
       "url": "https://github.com/jappeace/haskell-mobile/archive/a54a31ad0b860c4d04d419c83616b4549dd1d9d1.tar.gz",
       "hash": "sha256-RzWXiq2gQbWR6juheSzgjffzjZLsr23j5yo+khPEevE="
     },
+    "mobile-core-tools": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "zw3rk",
+        "repo": "mobile-core-tools"
+      },
+      "branch": "master",
+      "submodules": false,
+      "revision": "90e0a52893288bfe85e5ed6bff9cee077e3d18c7",
+      "url": "https://github.com/zw3rk/mobile-core-tools/archive/90e0a52893288bfe85e5ed6bff9cee077e3d18c7.tar.gz",
+      "hash": "sha256-/1Eppd4g/30hU/LKG84VWOgjOfrWfesBqM7eNmnOf08="
+    },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
