@@ -7,7 +7,8 @@ import Data.Text (pack)
 import GymTracker.Model (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
-import GymTracker.Views (appRootView)
+import GymTracker.Views (AppActions, appRootView, createAppActions)
+import HaskellMobile (ActionState, newActionState, runActionM)
 import HaskellMobile.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
 import HaskellMobile.Types (MobileApp(..), UserState(..))
 import System.IO.Unsafe (unsafePerformIO)
@@ -26,7 +27,8 @@ mobileApp = MobileApp
           writeIORef (stNeedsSyncOnBoot globalState) False
           triggerSync globalState
         False -> pure ()
-      appRootView globalState
+      appRootView globalAppActions globalState
+  , maActionState = globalActionState
   }
 
 -- | MobileContext that logs lifecycle events and triggers sync on Resume.
@@ -56,3 +58,14 @@ globalState = unsafePerformIO $ do
     loadRecords db
   newAppState records
 {-# NOINLINE globalState #-}
+
+-- | Global action state for callback handle registration.
+globalActionState :: ActionState
+globalActionState = unsafePerformIO newActionState
+{-# NOINLINE globalActionState #-}
+
+-- | Pre-created callback handles for the entire UI.
+globalAppActions :: AppActions
+globalAppActions = unsafePerformIO $
+  runActionM globalActionState (createAppActions globalState)
+{-# NOINLINE globalAppActions #-}

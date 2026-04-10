@@ -26,8 +26,9 @@ import GymTracker.Model
   , newAppState
   )
 import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory, getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry)
-import GymTracker.Views (exerciseListView, enterPRView, appRootView)
+import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions)
 import HaskellMobile.Widget (TextConfig(..), Widget(..))
+import HaskellMobile (newActionState, runActionM)
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -164,11 +165,19 @@ storageTests = sequentialTestGroup "Storage" AllFinish
         take 3 weights @?= [70.0, 65.0, 60.0]
   ]
 
+-- | Create a test AppState + AppActions pair.
+mkTestActions :: IO (AppState, AppActions)
+mkTestActions = do
+  st <- newAppState Map.empty
+  actionSt <- newActionState
+  actions <- runActionM actionSt (createAppActions st)
+  pure (st, actions)
+
 viewTests :: TestTree
 viewTests = testGroup "Views"
   [ testCase "exerciseListView returns ScrollView wrapping Column with correct child count" $ do
-      st <- newAppState Map.empty
-      widget <- exerciseListView st
+      (st, actions) <- mkTestActions
+      widget <- exerciseListView actions st
       case widget of
         ScrollView [Column children] ->
           -- 1 title + 5 category headers + 12 exercise buttons = 18
@@ -177,8 +186,8 @@ viewTests = testGroup "Views"
         _            -> assertFailure "expected ScrollView"
 
   , testCase "exerciseListView second Column child is Text Snatches category header" $ do
-      st <- newAppState Map.empty
-      widget <- exerciseListView st
+      (st, actions) <- mkTestActions
+      widget <- exerciseListView actions st
       case widget of
         ScrollView [Column (_ : secondChild : _)] ->
           case secondChild of
@@ -188,8 +197,8 @@ viewTests = testGroup "Views"
         _            -> assertFailure "expected ScrollView"
 
   , testCase "enterPRView returns Column with input, buttons, and history section" $ do
-      st <- newAppState Map.empty
-      widget <- enterPRView st Snatch
+      (st, actions) <- mkTestActions
+      widget <- enterPRView actions st Snatch
       case widget of
         Column children ->
           -- Title + TextInput + Row of buttons + Column history = 4
@@ -204,9 +213,9 @@ viewTests = testGroup "Views"
         Styled _ _      -> assertFailure "expected Column, got Styled"
 
   , testCase "enterPRView with history shows entries in 4th Column child" $ do
-      st <- newAppState Map.empty
+      (st, actions) <- mkTestActions
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00"), (90.0, "2025-12-01 10:00:00")]
-      widget <- enterPRView st Snatch
+      widget <- enterPRView actions st Snatch
       case widget of
         Column [_, _, _, Column historyWidgets] ->
           length historyWidgets @?= 2
@@ -214,8 +223,8 @@ viewTests = testGroup "Views"
         _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
-      st <- newAppState Map.empty
-      widget <- appRootView st
+      (st, actions) <- mkTestActions
+      widget <- appRootView actions st
       case widget of
         Styled _ (ScrollView [Column (Text config : _)]) ->
           tcLabel config @?= "PRRRRRRRRR"
@@ -487,9 +496,11 @@ runClientTests = testGroup "runNativeClientM"
 -- run the given action, then free the context.
 withTestAppContext :: (HttpState -> IO a) -> IO a
 withTestAppContext action = do
+  actionSt <- newActionState
   let dummyApp = MobileApp
         { maContext = defaultMobileContext
         , maView = \_userState -> pure (Text (TextConfig "" Nothing))
+        , maActionState = actionSt
         }
   ctxPtr <- newAppContext dummyApp
   appCtx <- derefAppContext ctxPtr
