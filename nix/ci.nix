@@ -72,6 +72,7 @@ in {
   native = combined;
   android = import ./android.nix { inherit sources; };
   apk = import ./apk.nix { inherit sources; };
+  apkArm7a = import ./apk.nix { inherit sources; androidArch="armv7a";};
 
   # Android tests (Linux, needs KVM)
   emulator-test = runTest "emulator-test"
