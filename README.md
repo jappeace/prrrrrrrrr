@@ -20,3 +20,25 @@ Do not add workarounds here (FFI exports, compatibility stubs, conditional impor
 A workaround in prrrrrrrrr that papers over a haskell-mobile bug is a code smell. It hides
 the problem from the library's own test suite and makes the correct fix harder to see.
 
+# Deploying
+
+## Android
+
+```bash
+export PRRRRRRRRR_API_KEY=your-key
+./install.sh                    # phone (aarch64)
+./install-wear.sh               # Wear OS watch (armv7a)
+```
+
+## iOS (simulator)
+
+Requires macOS with Xcode and Nix installed.
+
+```bash
+export PRRRRRRRRR_API_KEY=your-key
+./install-ios.sh
+```
+
+This builds the Haskell library via native GHC, patches it for iOS with mac2ios,
+stages an Xcode project, builds it, and installs on the booted iOS simulator.
+
