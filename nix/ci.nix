@@ -78,4 +78,9 @@ in {
     (import ./emulator.nix { inherit sources; }) "test-lifecycle";
   emulator-ui-test = runTest "emulator-ui-test"
     (import ./emulator-ui.nix { inherit sources; }) "test-ui";
-}
+} // (if pkgs.stdenv.isDarwin then {
+  # iOS builds require macOS (native GHC + mac2ios Mach-O patching)
+  ios = import ./ios.nix { inherit sources; };
+  ios-simulator = import ./ios.nix { inherit sources; simulator = true; };
+  ios-app = import ./ios-app.nix { inherit sources; };
+} else {})
