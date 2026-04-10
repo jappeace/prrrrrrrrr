@@ -10,6 +10,8 @@ import Data.Map.Strict qualified as Map
 import Data.IORef (readIORef, writeIORef)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding qualified as TE
+import Data.Time (addUTCTime, getCurrentTime)
+import Database.SQLite.Simple qualified as SQLite
 import GymTracker.Model
   ( Exercise(..)
   , Screen(..)
@@ -20,9 +22,10 @@ import GymTracker.Model
   , categoryName
   , exerciseCategory
   , exerciseName
+  , parseExercise
   , newAppState
   )
-import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory)
+import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory, getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry)
 import GymTracker.Views (exerciseListView, enterPRView, appRootView)
 import HaskellMobile.Widget (TextConfig(..), Widget(..))
 
@@ -69,9 +72,10 @@ main = defaultMain tests
 tests :: TestTree
 tests = testGroup "prrrrrrrrr"
   [ modelTests
-  , storageTests
+  , sequentialTestGroup "Database" AllFinish [storageTests, syncDbTests]
   , viewTests
   , parseTests
+  , syncPureTests
   , servantNativeTests
   ]
 
@@ -257,6 +261,97 @@ parseTests = testGroup "Weight parsing"
 
   , testCase "zero does not parse" $
       parseWeightText "0" @?= Nothing
+  ]
+
+syncPureTests :: TestTree
+syncPureTests = testGroup "Sync pure"
+  [ testCase "parseExercise roundtrips for all exercises" $
+      mapM_ (\ex -> parseExercise (exerciseName ex) @?= Just ex) allExercises
+
+  , testCase "parseExercise rejects unknown text" $ do
+      parseExercise "Unknown Lift" @?= Nothing
+      parseExercise "" @?= Nothing
+  ]
+
+syncDbTests :: TestTree
+syncDbTests = sequentialTestGroup "Sync DB" AllFinish
+  [ testCase "mergeRecord inserts when no existing record" $
+      withDatabase $ \db -> do
+        initDB db
+        -- Clear any prior test data
+        SQLite.execute_ db "DELETE FROM pr_records WHERE exercise = 'Clean'"
+        mergeRecord db Clean 85.0
+        records <- loadRecords db
+        Map.lookup Clean records @?= Just 85.0
+
+  , testCase "mergeRecord updates only if weight is strictly higher" $
+      withDatabase $ \db -> do
+        initDB db
+        SQLite.execute_ db "DELETE FROM pr_records WHERE exercise = 'Power Snatch'"
+        mergeRecord db PowerSnatch 60.0
+        mergeRecord db PowerSnatch 55.0  -- lower, should not update
+        records1 <- loadRecords db
+        Map.lookup PowerSnatch records1 @?= Just 60.0
+        mergeRecord db PowerSnatch 60.0  -- equal, should not update
+        records2 <- loadRecords db
+        Map.lookup PowerSnatch records2 @?= Just 60.0
+        mergeRecord db PowerSnatch 65.0  -- higher, should update
+        records3 <- loadRecords db
+        Map.lookup PowerSnatch records3 @?= Just 65.0
+
+  , testCase "mergeHistoryEntry deduplicates identical entries" $
+      withDatabase $ \db -> do
+        initDB db
+        now <- getCurrentTime
+        mergeHistoryEntry db Snatch 80.0 now
+        mergeHistoryEntry db Snatch 80.0 now  -- duplicate
+        rows <- SQLite.query db
+          "SELECT id FROM pr_history WHERE exercise = ? AND weight_kg = ? AND recorded_at = ?"
+          (exerciseName Snatch, (80.0 :: Double), show now)
+        length (rows :: [SQLite.Only Int]) @?= 1
+
+  , testCase "mergeHistoryEntry inserts distinct entries" $
+      withDatabase $ \db -> do
+        initDB db
+        now <- getCurrentTime
+        let later = addUTCTime 60 now
+        mergeHistoryEntry db Snatch 80.0 now
+        mergeHistoryEntry db Snatch 85.0 later  -- different timestamp and weight
+        rows <- SQLite.query db
+          "SELECT id FROM pr_history WHERE exercise = ? AND recorded_at IN (?, ?)"
+          (exerciseName Snatch, show now, show later)
+        length (rows :: [SQLite.Only Int]) @?= 2
+
+  , testCase "getHistorySince returns only entries after given time" $
+      withDatabase $ \db -> do
+        initDB db
+        now <- getCurrentTime
+        let past = addUTCTime (-120) now
+            middle = addUTCTime (-60) now
+        -- Insert entries at specific times
+        SQLite.execute db
+          "INSERT INTO pr_history (exercise, weight_kg, recorded_at) VALUES (?, ?, ?)"
+          (exerciseName OverheadSquat, (70.0 :: Double), show past)
+        SQLite.execute db
+          "INSERT INTO pr_history (exercise, weight_kg, recorded_at) VALUES (?, ?, ?)"
+          (exerciseName OverheadSquat, (75.0 :: Double), show now)
+        entries <- getHistorySince db middle
+        let ohsEntries = filter (\(ex, _, _) -> ex == OverheadSquat) entries
+        -- Only the entry at 'now' should be returned (past < middle, now > middle)
+        length ohsEntries @?= 1
+        case ohsEntries of
+          [(_, weight, _)] -> weight @?= 75.0
+          _                -> assertFailure "expected exactly one OHS entry"
+
+  , testCase "sync_meta roundtrip for last sync time" $
+      withDatabase $ \db -> do
+        initDB db
+        noSync <- getLastSyncTime db
+        noSync @?= Nothing
+        now <- getCurrentTime
+        setLastSyncTime db now
+        retrieved <- getLastSyncTime db
+        retrieved @?= Just now
   ]
 
 -- | Tests for GymTracker.ServantNative conversion helpers and client monad.

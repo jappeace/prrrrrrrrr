@@ -24,6 +24,7 @@ import GymTracker.Model
   , ExerciseCategory
   )
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
+import GymTracker.Sync (triggerSync)
 import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
 
 -- | Format a weight value for display.
@@ -108,6 +109,7 @@ savePR st ex = do
       history <- withDatabase $ \db -> loadExerciseHistory db ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
+      triggerSync st
     Nothing -> pure ()
   where
     modifyRecords :: AppState -> (Map Exercise Double -> Map Exercise Double) -> IO ()

@@ -56,8 +56,10 @@ library
   import: common-options
   exposed-modules:
       HaskellMobile.App
+      GymTracker.Config
       GymTracker.Model
       GymTracker.Storage
+      GymTracker.Sync
       GymTracker.Views
       GymTracker.ServantNative
   reexported-modules:
@@ -70,15 +72,18 @@ library
       src
   build-depends:
       haskell-mobile,
+      pr-sync-api,
       text,
       containers,
       sqlite-simple,
+      servant,
       servant-client-core,
       http-types,
       http-media,
       case-insensitive,
       mtl,
-      bytestring
+      bytestring,
+      time
   c-sources:
       cbits/storage_helper.c
   include-dirs:
@@ -106,7 +111,9 @@ test-suite unit
       prrrrrrrrr,
       text,
       containers,
+      sqlite-simple,
       servant-client-core,
       haskell-mobile,
       bytestring,
-      http-types
+      http-types,
+      time
