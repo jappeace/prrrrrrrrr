@@ -59,6 +59,7 @@ library
       GymTracker.Model
       GymTracker.Storage
       GymTracker.Views
+      GymTracker.ServantNative
   reexported-modules:
       HaskellMobile,
       HaskellMobile.Types,
@@ -71,7 +72,13 @@ library
       haskell-mobile,
       text,
       containers,
-      sqlite-simple
+      sqlite-simple,
+      servant-client-core,
+      http-types,
+      http-media,
+      case-insensitive,
+      mtl,
+      bytestring
   c-sources:
       cbits/storage_helper.c
   include-dirs:
@@ -98,4 +105,8 @@ test-suite unit
       tasty-hunit,
       prrrrrrrrr,
       text,
-      containers
+      containers,
+      servant-client-core,
+      haskell-mobile,
+      bytestring,
+      http-types

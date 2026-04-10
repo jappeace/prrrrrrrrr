@@ -2,12 +2,14 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 module Main where
 
+import Control.Exception (toException)
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import Data.Map.Strict qualified as Map
 import Data.IORef (readIORef, writeIORef)
 import Data.Text (Text, unpack)
+import Data.Text.Encoding qualified as TE
 import GymTracker.Model
   ( Exercise(..)
   , Screen(..)
@@ -24,11 +26,54 @@ import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadEx
 import GymTracker.Views (exerciseListView, enterPRView, appRootView)
 import HaskellMobile.Widget (TextConfig(..), Widget(..))
 
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.Sequence qualified as Seq
+import GymTracker.ServantNative
+  ( NativeClientM
+  , runNativeClientM
+  , mkNativeClientEnv
+  , toHttpMethod
+  , toHttpRequest
+  , fromHttpResponse
+  , fromHttpError
+  )
+import HaskellMobile
+  ( MobileApp(..)
+  , AppContext(..)
+  , newAppContext
+  , freeAppContext
+  , derefAppContext
+  , defaultMobileContext
+  )
+import HaskellMobile.Http
+  ( HttpMethod(..)
+  , HttpRequest(..)
+  , HttpResponse(..)
+  , HttpError(..)
+  , HttpState
+  )
+import Network.HTTP.Types (statusCode)
+import Servant.Client.Core
+  ( BaseUrl(..)
+  , Scheme(..)
+  , ClientError(..)
+  , ResponseF(..)
+  , RunClient(..)
+  )
+import Servant.Client.Core.Request (RequestF(..), defaultRequest)
+
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "prrrrrrrrr" [modelTests, storageTests, viewTests, parseTests]
+tests = testGroup "prrrrrrrrr"
+  [ modelTests
+  , storageTests
+  , viewTests
+  , parseTests
+  , servantNativeTests
+  ]
 
 modelTests :: TestTree
 modelTests = testGroup "Model"
@@ -151,6 +196,7 @@ viewTests = testGroup "Views"
         Row _           -> assertFailure "expected Column, got Row"
         ScrollView _    -> assertFailure "expected Column, got ScrollView"
         Image _         -> assertFailure "expected Column, got Image"
+        WebView _       -> assertFailure "expected Column, got WebView"
         Styled _ _      -> assertFailure "expected Column, got Styled"
 
   , testCase "enterPRView with history shows entries in 4th Column child" $ do
@@ -212,3 +258,146 @@ parseTests = testGroup "Weight parsing"
   , testCase "zero does not parse" $
       parseWeightText "0" @?= Nothing
   ]
+
+-- | Tests for GymTracker.ServantNative conversion helpers and client monad.
+servantNativeTests :: TestTree
+servantNativeTests = testGroup "ServantNative"
+  [ toHttpMethodTests
+  , toHttpRequestTests
+  , fromHttpResponseTests
+  , fromHttpErrorTests
+  , runClientTests
+  ]
+
+testBaseUrl :: BaseUrl
+testBaseUrl = BaseUrl Http "localhost" 8080 ""
+
+toHttpMethodTests :: TestTree
+toHttpMethodTests = testGroup "toHttpMethod"
+  [ testCase "GET maps to HttpGet" $
+      toHttpMethod "GET" @?= Right HttpGet
+  , testCase "POST maps to HttpPost" $
+      toHttpMethod "POST" @?= Right HttpPost
+  , testCase "PUT maps to HttpPut" $
+      toHttpMethod "PUT" @?= Right HttpPut
+  , testCase "DELETE maps to HttpDelete" $
+      toHttpMethod "DELETE" @?= Right HttpDelete
+  , testCase "unknown method returns Left" $ do
+      let result = toHttpMethod "PATCH"
+      case result of
+        Left _ -> pure ()
+        Right _ -> assertFailure "expected Left for unsupported method"
+  ]
+
+toHttpRequestTests :: TestTree
+toHttpRequestTests = testGroup "toHttpRequest"
+  [ testCase "builds correct URL from BaseUrl and path" $ do
+      let request = defaultRequest { requestMethod = "GET", requestPath = "/api/users" }
+      case toHttpRequest testBaseUrl request of
+        Left errorMessage -> assertFailure ("toHttpRequest failed: " ++ show errorMessage)
+        Right httpReq -> do
+          let urlBytes = TE.encodeUtf8 (hrUrl httpReq)
+          assertBool "URL contains base" ("http://localhost:8080" `BS.isPrefixOf` urlBytes)
+          assertBool "URL contains path" ("/api/users" `BS.isInfixOf` urlBytes)
+          hrMethod httpReq @?= HttpGet
+
+  , testCase "builds correct URL with query string" $ do
+      let request = defaultRequest
+            { requestMethod = "GET"
+            , requestPath = "/search"
+            , requestQueryString = Seq.fromList [("q", Just "hello")]
+            }
+      case toHttpRequest testBaseUrl request of
+        Left errorMessage -> assertFailure ("toHttpRequest failed: " ++ show errorMessage)
+        Right httpReq ->
+          assertBool "URL contains query" ("?q=hello" `BS.isInfixOf` TE.encodeUtf8 (hrUrl httpReq))
+
+  , testCase "rejects unsupported method" $ do
+      let request = defaultRequest { requestMethod = "PATCH" }
+      case toHttpRequest testBaseUrl request of
+        Left _ -> pure ()
+        Right _ -> assertFailure "expected Left for PATCH"
+  ]
+
+fromHttpResponseTests :: TestTree
+fromHttpResponseTests = testGroup "fromHttpResponse"
+  [ testCase "converts status code 200" $ do
+      let httpResp = HttpResponse 200 [] BS.empty
+          response = fromHttpResponse httpResp
+      statusCode (responseStatusCode response) @?= 200
+
+  , testCase "converts status code 404" $ do
+      let httpResp = HttpResponse 404 [] BS.empty
+          response = fromHttpResponse httpResp
+      statusCode (responseStatusCode response) @?= 404
+
+  , testCase "converts response headers" $ do
+      let httpResp = HttpResponse 200 [("Content-Type", "application/json")] BS.empty
+          response = fromHttpResponse httpResp
+      Seq.length (responseHeaders response) @?= 1
+
+  , testCase "converts response body" $ do
+      let httpResp = HttpResponse 200 [] "hello"
+          response = fromHttpResponse httpResp
+      responseBody response @?= LBS.fromStrict "hello"
+  ]
+
+fromHttpErrorTests :: TestTree
+fromHttpErrorTests = testGroup "fromHttpError"
+  [ testCase "HttpNetworkError becomes ConnectionError" $ do
+      let clientError = fromHttpError (HttpNetworkError "connection refused")
+      case clientError of
+        ConnectionError _ -> pure ()
+        FailureResponse _ _ -> assertFailure "expected ConnectionError"
+        DecodeFailure _ _ -> assertFailure "expected ConnectionError"
+        UnsupportedContentType _ _ -> assertFailure "expected ConnectionError"
+        InvalidContentTypeHeader _ -> assertFailure "expected ConnectionError"
+
+  , testCase "HttpTimeout becomes ConnectionError" $ do
+      let clientError = fromHttpError HttpTimeout
+      case clientError of
+        ConnectionError _ -> pure ()
+        FailureResponse _ _ -> assertFailure "expected ConnectionError"
+        DecodeFailure _ _ -> assertFailure "expected ConnectionError"
+        UnsupportedContentType _ _ -> assertFailure "expected ConnectionError"
+        InvalidContentTypeHeader _ -> assertFailure "expected ConnectionError"
+  ]
+
+-- | Tests that exercise the actual 'RunClient' instance via the desktop HTTP stub.
+-- The desktop stub always returns 200 OK with empty body.
+runClientTests :: TestTree
+runClientTests = testGroup "runNativeClientM"
+  [ testCase "simple GET via desktop stub returns 200" $
+      withTestAppContext $ \httpState -> do
+        let env = mkNativeClientEnv httpState testBaseUrl
+            request = defaultRequest { requestMethod = "GET", requestPath = "/test" }
+        result <- runNativeClientM (runRequestAcceptStatus Nothing request) env
+        case result of
+          Right response -> statusCode (responseStatusCode response) @?= 200
+          Left clientError -> assertFailure ("expected 200 OK, got: " ++ show clientError)
+
+  , testCase "throwClientError propagates" $
+      withTestAppContext $ \httpState -> do
+        let env = mkNativeClientEnv httpState testBaseUrl
+            expectedError :: ClientError
+            expectedError = ConnectionError (toException (userError "test error"))
+        result <- runNativeClientM (throwClientError expectedError :: NativeClientM ()) env
+        case result of
+          Left (ConnectionError _) -> pure ()
+          Left _ -> assertFailure "expected ConnectionError"
+          Right _ -> assertFailure "expected Left"
+  ]
+
+-- | Create a temporary 'AppContext' with a properly wired 'HttpState',
+-- run the given action, then free the context.
+withTestAppContext :: (HttpState -> IO a) -> IO a
+withTestAppContext action = do
+  let dummyApp = MobileApp
+        { maContext = defaultMobileContext
+        , maView = \_userState -> pure (Text (TextConfig "" Nothing))
+        }
+  ctxPtr <- newAppContext dummyApp
+  appCtx <- derefAppContext ctxPtr
+  result <- action (acHttpState appCtx)
+  freeAppContext ctxPtr
+  pure result
