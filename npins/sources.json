@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace",
+        "owner": "jappeace-sloth",
         "repo": "haskell-mobile"
       },
-      "branch": "master",
+      "branch": "fix/armv7a-profiling",
       "submodules": false,
-      "revision": "a54a31ad0b860c4d04d419c83616b4549dd1d9d1",
-      "url": "https://github.com/jappeace/haskell-mobile/archive/a54a31ad0b860c4d04d419c83616b4549dd1d9d1.tar.gz",
-      "hash": "sha256-RzWXiq2gQbWR6juheSzgjffzjZLsr23j5yo+khPEevE="
+      "revision": "e78a15f74ff7eeee0ba04c2c90b1616cf7049344",
+      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/e78a15f74ff7eeee0ba04c2c90b1616cf7049344.tar.gz",
+      "hash": "sha256-K6/0VJht0h3b5gH416lfBck5qqqrmwSwZy+1S4NyrR4="
     },
     "nixpkgs": {
       "type": "Channel",
