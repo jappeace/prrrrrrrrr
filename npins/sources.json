@@ -9,9 +9,9 @@
       },
       "branch": "master",
       "submodules": false,
-      "revision": "4a26bd6a8e4a54df20b6416dd56ecec7097727eb",
-      "url": "https://github.com/jappeace/haskell-mobile/archive/4a26bd6a8e4a54df20b6416dd56ecec7097727eb.tar.gz",
-      "hash": "sha256-rFLPY15NHIJ2lt5xtMoCGyO5L0yLWwr8FDREYdwK+zU="
+      "revision": "48c4f33dd80fd358d5a0cae7ec4975bf904f3df1",
+      "url": "https://github.com/jappeace/haskell-mobile/archive/48c4f33dd80fd358d5a0cae7ec4975bf904f3df1.tar.gz",
+      "hash": "sha256-JyXXAg8F2Iqa+rH/b6QePCGI1QGTYHj0lfGsP0TvAbs="
     },
     "nixpkgs": {
       "type": "Channel",
