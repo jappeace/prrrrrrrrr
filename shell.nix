@@ -14,6 +14,12 @@ pkgs.mkShell {
       ps.tasty-hunit
       ps.sqlite-simple
       ps.toml-parser
+      ps.servant-client-core
+      ps.http-types
+      ps.http-media
+      ps.case-insensitive
+      ps.mtl
+      ps.bytestring
     ]))
     pkgs.cabal-install
   ];
