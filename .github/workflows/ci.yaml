@@ -29,7 +29,7 @@ jobs:
         sudo udevadm control --reload-rules
         sudo udevadm trigger --name-match=kvm
     - name: Build (Haskell unit tests + Android library + APK)
-      run: nix-build nix/ci.nix
+      run: nix-build nix/ci.nix -A native -A android -A apk
     - name: Build UI test
       run: nix-build nix/emulator-ui.nix -o result-emulator-ui
     - name: Run UI test
