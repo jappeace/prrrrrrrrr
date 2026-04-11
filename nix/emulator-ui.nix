@@ -398,13 +398,19 @@ else
     EXIT_CODE=1
 fi
 
-if dump_ui "$UI_DUMP"; then
-    if grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
-    else
-        echo "FAIL: UI hierarchy — 'Set PR: Snatch' visible"
-        EXIT_CODE=1
+# Retry UI dump until EnterPR screen is visible (up to 30s)
+ENTER_PR_VISIBLE=0
+for UI_WAIT in $(seq 1 6); do
+    if dump_ui "$UI_DUMP" && grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
+        ENTER_PR_VISIBLE=1
+        break
     fi
+    echo "  UI not ready yet (attempt $UI_WAIT/6), waiting 5s..."
+    sleep 5
+done
+
+if [ $ENTER_PR_VISIBLE -eq 1 ]; then
+    echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
 
     if grep -q 'Save' "$UI_DUMP" 2>/dev/null; then
         echo "PASS: UI hierarchy — 'Save' button visible"
@@ -420,7 +426,7 @@ if dump_ui "$UI_DUMP"; then
         EXIT_CODE=1
     fi
 else
-    echo "FAIL: UI hierarchy — could not dump EnterPR view hierarchy"
+    echo "FAIL: UI hierarchy — 'Set PR: Snatch' not visible after retries"
     EXIT_CODE=1
 fi
 
