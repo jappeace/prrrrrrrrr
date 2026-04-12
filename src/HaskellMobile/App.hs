@@ -53,9 +53,9 @@ syncMobileContext = MobileContext
 -- Opens the SQLite database, creates the table, and loads existing records.
 globalState :: AppState
 globalState = unsafePerformIO $ do
-  records <- withDatabase $ \db -> do
-    initDB db
-    loadRecords db
+  records <- withDatabase $ do
+    initDB
+    loadRecords
   newAppState records
 {-# NOINLINE globalState #-}
 
