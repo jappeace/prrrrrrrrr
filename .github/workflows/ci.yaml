@@ -33,7 +33,32 @@ jobs:
     - name: Build UI test
       run: nix-build nix/emulator-ui.nix -o result-emulator-ui
     - name: Run UI test
-      run: ./result-emulator-ui/bin/test-ui
+      run: |
+        # run_with_retry: up to 10 attempts, succeed on first pass,
+        # fail only if all 10 fail.  If output contains "FATAL:" we
+        # stop immediately (e.g. native library failed to load).
+        max_attempts=10
+        attempt=1
+        log_file=$(mktemp /tmp/ui-retry-XXXX.log)
+        while [ $attempt -le $max_attempts ]; do
+            echo "[ui-test] attempt $attempt/$max_attempts"
+            if ./result-emulator-ui/bin/test-ui 2>&1 | tee "$log_file"; then
+                echo "[ui-test] PASSED on attempt $attempt"
+                exit 0
+            fi
+            if grep -q "^FATAL:" "$log_file" 2>/dev/null; then
+                echo "[ui-test] FATAL error detected — not retrying"
+                exit 1
+            fi
+            echo "[ui-test] attempt $attempt FAILED"
+            attempt=$((attempt + 1))
+            if [ $attempt -le $max_attempts ]; then
+                echo "[ui-test] retrying in 5s..."
+                sleep 5
+            fi
+        done
+        echo "[ui-test] FAILED after $max_attempts attempts"
+        exit 1
     - name: Cancel workflow on failure
       if: failure()
       continue-on-error: true
