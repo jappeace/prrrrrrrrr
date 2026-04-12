@@ -19,7 +19,8 @@ let
         ps.containers
         ps.tasty
         ps.tasty-hunit
-        ps.sqlite-simple
+        ps.persistent
+        ps.persistent-sqlite
         ps.toml-parser
         ps.servant
         ps.servant-client-core

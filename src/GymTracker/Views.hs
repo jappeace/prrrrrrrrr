@@ -14,10 +14,9 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
+import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
-  , AppState(..)
-  , Screen(..)
   , allExercises
   , allCategories
   , categoryName
@@ -61,7 +60,7 @@ createAppActions st = do
     mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
     mkExerciseAction ex = do
       action <- createAction $ do
-        history <- withDatabase $ \db -> loadExerciseHistory db ex
+        history <- withDatabase $ loadExerciseHistory ex
         writeIORef (stHistory st) history
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
@@ -148,9 +147,9 @@ savePR st ex = do
   input <- readIORef (stInputText st)
   case parseWeight input of
     Just w  -> do
-      withDatabase $ \db -> saveRecord db ex w
+      withDatabase $ saveRecord ex w
       modifyRecords st (Map.insert ex w)
-      history <- withDatabase $ \db -> loadExerciseHistory db ex
+      history <- withDatabase $ loadExerciseHistory ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
       triggerSync st

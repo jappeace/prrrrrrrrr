@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Exception (toException)
+import Control.Monad.IO.Class (liftIO)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -11,11 +12,10 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding qualified as TE
 import Data.Time (addUTCTime, getCurrentTime)
-import Database.SQLite.Simple qualified as SQLite
+import Database.Persist (deleteWhere, insert_, selectList, (==.))
+import GymTracker.AppState (AppState(..), Screen(..), newAppState)
 import GymTracker.Model
   ( Exercise(..)
-  , Screen(..)
-  , AppState(..)
   , ExerciseCategory(..)
   , allExercises
   , allCategories
@@ -23,9 +23,12 @@ import GymTracker.Model
   , exerciseCategory
   , exerciseName
   , parseExercise
-  , newAppState
   )
-import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory, getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry)
+import GymTracker.Storage
+  ( withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory
+  , getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry
+  , PrHistory(..), EntityField(..)
+  )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions)
 import HaskellMobile.Widget (TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import HaskellMobile (newActionState, runActionM)
@@ -128,41 +131,41 @@ modelTests = testGroup "Model"
 storageTests :: TestTree
 storageTests = sequentialTestGroup "Storage" AllFinish
   [ testCase "saveRecord then loadRecords roundtrip" $ do
-      withDatabase $ \db -> do
-        initDB db
-        saveRecord db Snatch 80.0
-        saveRecord db Deadlift 150.5
-        records <- loadRecords db
-        Map.lookup Snatch records @?= Just 80.0
-        Map.lookup Deadlift records @?= Just 150.5
+      records <- withDatabase $ do
+        initDB
+        saveRecord Snatch 80.0
+        saveRecord Deadlift 150.5
+        loadRecords
+      Map.lookup Snatch records @?= Just 80.0
+      Map.lookup Deadlift records @?= Just 150.5
 
   , testCase "saveRecord overwrites previous value" $ do
-      withDatabase $ \db -> do
-        initDB db
-        saveRecord db BackSquat 100.0
-        saveRecord db BackSquat 110.0
-        records <- loadRecords db
-        Map.lookup BackSquat records @?= Just 110.0
+      records <- withDatabase $ do
+        initDB
+        saveRecord BackSquat 100.0
+        saveRecord BackSquat 110.0
+        loadRecords
+      Map.lookup BackSquat records @?= Just 110.0
 
   , testCase "loadExerciseHistory returns entry after saveRecord" $ do
-      withDatabase $ \db -> do
-        initDB db
-        saveRecord db FrontSquat 90.0
-        history <- loadExerciseHistory db FrontSquat
-        case history of
-          [] -> assertFailure "expected at least one history entry"
-          ((weight, _timestamp) : _) -> weight @?= 90.0
+      history <- withDatabase $ do
+        initDB
+        saveRecord FrontSquat 90.0
+        loadExerciseHistory FrontSquat
+      case history of
+        [] -> assertFailure "expected at least one history entry"
+        ((weight, _timestamp) : _) -> weight @?= 90.0
 
   , testCase "multiple saveRecord calls accumulate in history newest first" $ do
-      withDatabase $ \db -> do
-        initDB db
-        saveRecord db PushPress 60.0
-        saveRecord db PushPress 65.0
-        saveRecord db PushPress 70.0
-        history <- loadExerciseHistory db PushPress
-        let weights = map fst history
-        -- newest first: 70, 65, 60 (plus any from prior test runs)
-        take 3 weights @?= [70.0, 65.0, 60.0]
+      weights <- withDatabase $ do
+        initDB
+        saveRecord PushPress 60.0
+        saveRecord PushPress 65.0
+        saveRecord PushPress 70.0
+        history <- loadExerciseHistory PushPress
+        pure (map fst history)
+      -- newest first: 70, 65, 60 (plus any from prior test runs)
+      take 3 weights @?= [70.0, 65.0, 60.0]
   ]
 
 -- | Create a test AppState + AppActions pair.
@@ -205,8 +208,8 @@ viewTests = testGroup "Views"
       widget <- enterPRView actions st Snatch
       case widget of
         Column children ->
-          -- Title + TextInput + Row of buttons + Column history = 4
-          length children @?= 4
+          -- "Set PR:" label + exercise name + TextInput + Row of buttons + Column history = 5
+          length children @?= 5
         Text _          -> assertFailure "expected Column, got Text"
         Button _        -> assertFailure "expected Column, got Button"
         TextInput _     -> assertFailure "expected Column, got TextInput"
@@ -217,21 +220,21 @@ viewTests = testGroup "Views"
         MapView _       -> assertFailure "expected Column, got MapView"
         Styled _ _      -> assertFailure "expected Column, got Styled"
 
-  , testCase "enterPRView with history shows entries in 4th Column child" $ do
+  , testCase "enterPRView with history shows entries in 5th Column child" $ do
       (st, actions) <- mkTestActions
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00"), (90.0, "2025-12-01 10:00:00")]
       widget <- enterPRView actions st Snatch
       case widget of
-        Column [_, _, _, Column historyWidgets] ->
+        Column [_, _, _, _, Column historyWidgets] ->
           length historyWidgets @?= 2
-        Column _ -> assertFailure "expected 4 children with history Column as 4th"
+        Column _ -> assertFailure "expected 5 children with history Column as 5th"
         _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
       (st, actions) <- mkTestActions
       widget <- appRootView actions st
       case widget of
-        Styled _ (ScrollView [Column (Text config : _)]) ->
+        Styled _ (ScrollView [Column (Styled _ (Text config) : _)]) ->
           tcLabel config @?= "PRRRRRRRRR"
         Styled _ (ScrollView _) -> assertFailure "expected ScrollView with Column as first child"
         Styled _ _              -> assertFailure "expected Styled wrapping ScrollView"
@@ -289,83 +292,91 @@ syncPureTests = testGroup "Sync pure"
 
 syncDbTests :: TestTree
 syncDbTests = sequentialTestGroup "Sync DB" AllFinish
-  [ testCase "mergeRecord inserts when no existing record" $
-      withDatabase $ \db -> do
-        initDB db
+  [ testCase "mergeRecord inserts when no existing record" $ do
+      records <- withDatabase $ do
+        initDB
         -- Clear any prior test data
-        SQLite.execute_ db "DELETE FROM pr_records WHERE exercise = 'Clean'"
-        mergeRecord db Clean 85.0
-        records <- loadRecords db
-        Map.lookup Clean records @?= Just 85.0
+        deleteWhere [PrRecordExercise ==. Clean]
+        mergeRecord Clean 85.0
+        loadRecords
+      Map.lookup Clean records @?= Just 85.0
 
-  , testCase "mergeRecord updates only if weight is strictly higher" $
-      withDatabase $ \db -> do
-        initDB db
-        SQLite.execute_ db "DELETE FROM pr_records WHERE exercise = 'Power Snatch'"
-        mergeRecord db PowerSnatch 60.0
-        mergeRecord db PowerSnatch 55.0  -- lower, should not update
-        records1 <- loadRecords db
-        Map.lookup PowerSnatch records1 @?= Just 60.0
-        mergeRecord db PowerSnatch 60.0  -- equal, should not update
-        records2 <- loadRecords db
-        Map.lookup PowerSnatch records2 @?= Just 60.0
-        mergeRecord db PowerSnatch 65.0  -- higher, should update
-        records3 <- loadRecords db
-        Map.lookup PowerSnatch records3 @?= Just 65.0
+  , testCase "mergeRecord updates only if weight is strictly higher" $ do
+      (records1, records2, records3) <- withDatabase $ do
+        initDB
+        deleteWhere [PrRecordExercise ==. PowerSnatch]
+        mergeRecord PowerSnatch 60.0
+        mergeRecord PowerSnatch 55.0  -- lower, should not update
+        r1 <- loadRecords
+        mergeRecord PowerSnatch 60.0  -- equal, should not update
+        r2 <- loadRecords
+        mergeRecord PowerSnatch 65.0  -- higher, should update
+        r3 <- loadRecords
+        pure (r1, r2, r3)
+      Map.lookup PowerSnatch records1 @?= Just 60.0
+      Map.lookup PowerSnatch records2 @?= Just 60.0
+      Map.lookup PowerSnatch records3 @?= Just 65.0
 
-  , testCase "mergeHistoryEntry deduplicates identical entries" $
-      withDatabase $ \db -> do
-        initDB db
-        now <- getCurrentTime
-        mergeHistoryEntry db Snatch 80.0 now
-        mergeHistoryEntry db Snatch 80.0 now  -- duplicate
-        rows <- SQLite.query db
-          "SELECT id FROM pr_history WHERE exercise = ? AND weight_kg = ? AND recorded_at = ?"
-          (exerciseName Snatch, (80.0 :: Double), show now)
-        length (rows :: [SQLite.Only Int]) @?= 1
+  , testCase "mergeHistoryEntry deduplicates identical entries" $ do
+      duplicateCount <- withDatabase $ do
+        initDB
+        now <- liftIO getCurrentTime
+        mergeHistoryEntry Snatch 80.0 now
+        mergeHistoryEntry Snatch 80.0 now  -- duplicate
+        matches <- selectList
+          [ PrHistoryExercise ==. Snatch
+          , PrHistoryWeightKg ==. 80.0
+          , PrHistoryRecordedAt ==. now
+          ] []
+        pure (length matches)
+      duplicateCount @?= 1
 
-  , testCase "mergeHistoryEntry inserts distinct entries" $
-      withDatabase $ \db -> do
-        initDB db
-        now <- getCurrentTime
+  , testCase "mergeHistoryEntry inserts distinct entries" $ do
+      matchCount <- withDatabase $ do
+        initDB
+        now <- liftIO getCurrentTime
         let later = addUTCTime 60 now
-        mergeHistoryEntry db Snatch 80.0 now
-        mergeHistoryEntry db Snatch 85.0 later  -- different timestamp and weight
-        rows <- SQLite.query db
-          "SELECT id FROM pr_history WHERE exercise = ? AND recorded_at IN (?, ?)"
-          (exerciseName Snatch, show now, show later)
-        length (rows :: [SQLite.Only Int]) @?= 2
+        mergeHistoryEntry Snatch 80.0 now
+        mergeHistoryEntry Snatch 85.0 later  -- different timestamp and weight
+        nowMatches <- selectList
+          [ PrHistoryExercise ==. Snatch
+          , PrHistoryRecordedAt ==. now
+          ] []
+        laterMatches <- selectList
+          [ PrHistoryExercise ==. Snatch
+          , PrHistoryRecordedAt ==. later
+          ] []
+        pure (length nowMatches + length laterMatches)
+      matchCount @?= 2
 
-  , testCase "getHistorySince returns only entries after given time" $
-      withDatabase $ \db -> do
-        initDB db
-        now <- getCurrentTime
+  , testCase "getHistorySince returns only entries after given time" $ do
+      ohsEntries <- withDatabase $ do
+        initDB
+        now <- liftIO getCurrentTime
         let past = addUTCTime (-120) now
             middle = addUTCTime (-60) now
         -- Insert entries at specific times
-        SQLite.execute db
-          "INSERT INTO pr_history (exercise, weight_kg, recorded_at) VALUES (?, ?, ?)"
-          (exerciseName OverheadSquat, (70.0 :: Double), show past)
-        SQLite.execute db
-          "INSERT INTO pr_history (exercise, weight_kg, recorded_at) VALUES (?, ?, ?)"
-          (exerciseName OverheadSquat, (75.0 :: Double), show now)
-        entries <- getHistorySince db middle
-        let ohsEntries = filter (\(ex, _, _) -> ex == OverheadSquat) entries
-        -- Only the entry at 'now' should be returned (past < middle, now > middle)
-        length ohsEntries @?= 1
-        case ohsEntries of
-          [(_, weight, _)] -> weight @?= 75.0
-          _                -> assertFailure "expected exactly one OHS entry"
+        insert_ $ PrHistory OverheadSquat 70.0 past
+        insert_ $ PrHistory OverheadSquat 75.0 now
+        entries <- getHistorySince middle
+        pure $ filter (\(ex, _, _) -> ex == OverheadSquat) entries
+      -- Only the entry at 'now' should be returned (past < middle, now > middle)
+      length ohsEntries @?= 1
+      case ohsEntries of
+        [(_, weight, _)] -> weight @?= 75.0
+        _                -> assertFailure "expected exactly one OHS entry"
 
-  , testCase "sync_meta roundtrip for last sync time" $
-      withDatabase $ \db -> do
-        initDB db
-        noSync <- getLastSyncTime db
-        noSync @?= Nothing
-        now <- getCurrentTime
-        setLastSyncTime db now
-        retrieved <- getLastSyncTime db
-        retrieved @?= Just now
+  , testCase "sync_meta roundtrip for last sync time" $ do
+      (noSync, retrieved, now) <- withDatabase $ do
+        initDB
+        deleteWhere [SyncMetaKey ==. "last_sync_time"]
+        noSync <- getLastSyncTime
+        now <- liftIO getCurrentTime
+        setLastSyncTime now
+        retrieved <- getLastSyncTime
+        pure (noSync, retrieved, now)
+      noSync @?= Nothing
+      retrieved @?= Just now
   ]
 
 -- | Tests for GymTracker.ServantNative conversion helpers and client monad.

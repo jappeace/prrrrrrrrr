@@ -1,5 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Core data model for the gym PR tracker.
+-- | Core exercise model for the gym PR tracker.
+--
+-- This module lives in the schema package so that the persistent TH
+-- definitions in 'GymTracker.Schema' can reference the 'Exercise' type
+-- without pulling in haskell-mobile (which is only available in the
+-- consumer build, not in cross-deps).
 module GymTracker.Model
   ( Exercise(..)
   , allExercises
@@ -9,16 +14,10 @@ module GymTracker.Model
   , allCategories
   , categoryName
   , exerciseCategory
-  , Screen(..)
-  , AppState(..)
-  , newAppState
   )
 where
 
-import Data.IORef (IORef, newIORef)
-import Data.Map.Strict (Map)
 import Data.Text (Text)
-import HaskellMobile.Http (HttpState)
 
 -- | Olympic weightlifting and strength exercises.
 data Exercise
@@ -97,37 +96,3 @@ parseExercise :: Text -> Maybe Exercise
 parseExercise t = case filter (\ex -> exerciseName ex == t) allExercises of
   [ex] -> Just ex
   _    -> Nothing
-
--- | Application screens.
-data Screen
-  = ExerciseList
-  | EnterPR Exercise
-  deriving (Show, Eq)
-
--- | Mutable application state.
-data AppState = AppState
-  { stScreen          :: IORef Screen
-  , stRecords         :: IORef (Map Exercise Double)
-  , stInputText       :: IORef Text
-  , stHistory         :: IORef [(Double, Text)]  -- ^ weight + timestamp, newest first
-  , stHttpState       :: IORef (Maybe HttpState)
-  , stNeedsSyncOnBoot :: IORef Bool
-  }
-
--- | Create a fresh 'AppState' with the given initial records.
-newAppState :: Map Exercise Double -> IO AppState
-newAppState initialRecords = do
-  screen          <- newIORef ExerciseList
-  records         <- newIORef initialRecords
-  inputText       <- newIORef ""
-  history         <- newIORef []
-  httpState       <- newIORef Nothing
-  needsSyncOnBoot <- newIORef True
-  pure AppState
-    { stScreen          = screen
-    , stRecords         = records
-    , stInputText       = inputText
-    , stHistory         = history
-    , stHttpState       = httpState
-    , stNeedsSyncOnBoot = needsSyncOnBoot
-    }
