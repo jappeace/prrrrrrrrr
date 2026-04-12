@@ -56,6 +56,8 @@ data AppActions = AppActions
     -- ^ Text input change handler for weight entry.
   , aaPercentageInput :: OnChange
     -- ^ Text input change handler for percentage entry on exercise list.
+  , aaNotesInput      :: OnChange
+    -- ^ Text input change handler for optional notes.
   }
 
 -- | Create all 'Action' / 'OnChange' handles for the app.
@@ -70,12 +72,14 @@ createAppActions st = do
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
   percentageInput <- createOnChange (\t ->
     writeIORef (stPercentage st) (parsePercentage t))
+  notesInput      <- createOnChange (\t -> writeIORef (stNotesInput st) t)
   pure AppActions
     { aaExerciseButtons = exerciseButtons
     , aaSaveButtons     = saveButtons
     , aaBackButton      = back
     , aaWeightInput     = weightInput
     , aaPercentageInput = percentageInput
+    , aaNotesInput      = notesInput
     }
   where
     mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
@@ -86,6 +90,7 @@ createAppActions st = do
         writeIORef (stConfetti st) False
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
+        writeIORef (stNotesInput st) ""
       pure (ex, action)
     mkSaveAction :: Exercise -> ActionM (Exercise, Action)
     mkSaveAction ex = do
@@ -156,6 +161,7 @@ exerciseWithPercentage actions records percentage ex =
 enterPRView :: AppActions -> AppState -> Exercise -> IO Widget
 enterPRView actions st ex = do
   inputVal    <- readIORef (stInputText st)
+  notesVal    <- readIORef (stNotesInput st)
   history     <- readIORef (stHistory st)
   showConfetti <- readIORef (stConfetti st)
   let historyWidgets = map historyEntry history
@@ -167,6 +173,13 @@ enterPRView actions st ex = do
             , tiHint      = "Weight (kg)"
             , tiValue     = inputVal
             , tiOnChange  = aaWeightInput actions
+            , tiFontConfig = Nothing
+            }
+        , Styled centeredText $ TextInput TextInputConfig
+            { tiInputType = InputText
+            , tiHint      = "Notes (optional)"
+            , tiValue     = notesVal
+            , tiOnChange  = aaNotesInput actions
             , tiFontConfig = Nothing
             }
         , Row
@@ -185,10 +198,14 @@ enterPRView actions st ex = do
       then confettiOverlay : formWidgets
       else formWidgets
 
--- | Render a single history entry.
-historyEntry :: (Double, Text) -> Widget
-historyEntry (weight, timestamp) = Styled centeredText $ Text TextConfig
-  { tcLabel = timestamp <> ": " <> formatWeight weight, tcFontConfig = Nothing }
+-- | Render a single history entry, optionally showing notes.
+historyEntry :: (Double, Text, Maybe Text) -> Widget
+historyEntry (weight, timestamp, notes) =
+  let base = timestamp <> ": " <> formatWeight weight
+      label = case notes of
+        Just n  -> base <> " (" <> n <> ")"
+        Nothing -> base
+  in Styled centeredText $ Text TextConfig { tcLabel = label, tcFontConfig = Nothing }
 
 -- | Confetti animation overlay — a row of animated colored particles.
 -- Shown on the EnterPR screen after saving a new personal record.
@@ -226,13 +243,16 @@ confettiOverlay =
 savePR :: AppState -> Exercise -> IO ()
 savePR st ex = do
   input <- readIORef (stInputText st)
+  notesRaw <- readIORef (stNotesInput st)
+  let notes = if notesRaw == "" then Nothing else Just notesRaw
   case parseWeight input of
     Just w  -> do
-      withDatabase $ saveRecord ex w
+      withDatabase $ saveRecord ex w notes
       modifyRecords st (Map.insert ex w)
       history <- withDatabase $ loadExerciseHistory ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
+      writeIORef (stNotesInput st) ""
       writeIORef (stConfetti st) True
       triggerSync st
     Nothing -> pure ()
