@@ -14,10 +14,9 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
+import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
-  , AppState(..)
-  , Screen(..)
   , allExercises
   , allCategories
   , categoryName

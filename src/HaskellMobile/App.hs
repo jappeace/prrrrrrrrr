@@ -4,7 +4,7 @@ module HaskellMobile.App (mobileApp) where
 
 import Data.IORef (readIORef, writeIORef)
 import Data.Text (pack)
-import GymTracker.Model (AppState(..), newAppState)
+import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
 import GymTracker.Views (AppActions, appRootView, createAppActions)

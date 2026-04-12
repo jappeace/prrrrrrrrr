@@ -24,11 +24,8 @@ import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
 import GymTracker.Config (serverBaseUrl, apiKey)
-import GymTracker.Model
-  ( AppState(..)
-  , exerciseName
-  , parseExercise
-  )
+import GymTracker.AppState (AppState(..))
+import GymTracker.Model (exerciseName, parseExercise)
 import GymTracker.ServantNative (NativeClientM, runNativeClientM, mkNativeClientEnv)
 import GymTracker.Storage
   ( SqlPersistM

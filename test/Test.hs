@@ -13,10 +13,9 @@ import Data.Text (Text, unpack)
 import Data.Text.Encoding qualified as TE
 import Data.Time (addUTCTime, getCurrentTime)
 import Database.Persist (deleteWhere, insert_, selectList, (==.))
+import GymTracker.AppState (AppState(..), Screen(..), newAppState)
 import GymTracker.Model
   ( Exercise(..)
-  , Screen(..)
-  , AppState(..)
   , ExerciseCategory(..)
   , allExercises
   , allCategories
@@ -24,7 +23,6 @@ import GymTracker.Model
   , exerciseCategory
   , exerciseName
   , parseExercise
-  , newAppState
   )
 import GymTracker.Storage
   ( withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory
