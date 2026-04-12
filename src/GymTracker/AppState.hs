@@ -29,13 +29,15 @@ data AppState = AppState
   { stScreen          :: IORef Screen
   , stRecords         :: IORef (Map Exercise Double)
   , stInputText       :: IORef Text
-  , stHistory         :: IORef [(Double, Text)]  -- ^ weight + timestamp, newest first
+  , stHistory         :: IORef [(Double, Text, Maybe Text)]  -- ^ weight + timestamp + notes, newest first
   , stHttpState       :: IORef (Maybe HttpState)
   , stNeedsSyncOnBoot :: IORef Bool
   , stPercentage      :: IORef Word
     -- ^ Percentage of 1RM to calculate (0 = disabled).
   , stConfetti        :: IORef Bool
     -- ^ Show confetti animation after saving a new PR.
+  , stNotesInput      :: IORef Text
+    -- ^ Text input for optional notes on a PR entry.
   }
 
 -- | Create a fresh 'AppState' with the given initial records.
@@ -49,6 +51,7 @@ newAppState initialRecords = do
   needsSyncOnBoot <- newIORef True
   percentage      <- newIORef 0
   confetti        <- newIORef False
+  notesInput      <- newIORef ""
   pure AppState
     { stScreen          = screen
     , stRecords         = records
@@ -58,4 +61,5 @@ newAppState initialRecords = do
     , stNeedsSyncOnBoot = needsSyncOnBoot
     , stPercentage      = percentage
     , stConfetti        = confetti
+    , stNotesInput      = notesInput
     }

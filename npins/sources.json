@@ -36,14 +36,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace",
+        "owner": "jappeace-sloth",
         "repo": "pr-sync-api"
       },
-      "branch": "master",
+      "branch": "feature/history-notes",
       "submodules": false,
-      "revision": "bc15dc01c5e9ab8fe6c3fefe6b8e0309e0f87bab",
-      "url": "https://github.com/jappeace/pr-sync-api/archive/bc15dc01c5e9ab8fe6c3fefe6b8e0309e0f87bab.tar.gz",
-      "hash": "sha256-db4vYiPi+B/Msi/gzhSizMw45NfPz4V11ihb2s7D21k="
+      "revision": "e6512829f6247360e9952bdfac3572de9c921bb7",
+      "url": "https://github.com/jappeace-sloth/pr-sync-api/archive/e6512829f6247360e9952bdfac3572de9c921bb7.tar.gz",
+      "hash": "sha256-rsV/RgUHxkc5F1G00Qk3riQg1zVF4KXWP74Az6lZWzA="
     }
   },
   "version": 7
