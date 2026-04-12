@@ -56,6 +56,7 @@ PrHistory
   exercise Exercise
   weightKg Double
   recordedAt UTCTime
+  notes Text Maybe
 
 SyncMeta
   key Text

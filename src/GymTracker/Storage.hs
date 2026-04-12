@@ -83,19 +83,19 @@ loadRecords = do
     ]
 
 -- | Save a single PR record (upsert) and append to history.
-saveRecord :: Exercise -> Double -> SqlPersistM ()
-saveRecord exercise weight = do
+saveRecord :: Exercise -> Double -> Maybe Text -> SqlPersistM ()
+saveRecord exercise weight notes = do
   _ <- upsertBy (UniqueExercise exercise)
     (PrRecord exercise weight)
     [PrRecordWeightKg =. weight]
   now <- liftIO getCurrentTime
-  insert_ $ PrHistory exercise weight now
+  insert_ $ PrHistory exercise weight now notes
 
 -- | Load all history entries for an exercise, newest first.
-loadExerciseHistory :: Exercise -> SqlPersistM [(Double, Text)]
+loadExerciseHistory :: Exercise -> SqlPersistM [(Double, Text, Maybe Text)]
 loadExerciseHistory exercise = do
   entities <- selectList [PrHistoryExercise ==. exercise] [Desc PrHistoryId]
-  pure [ (prHistoryWeightKg (entityVal entity), pack (show (prHistoryRecordedAt (entityVal entity))))
+  pure [ (prHistoryWeightKg (entityVal entity), pack (show (prHistoryRecordedAt (entityVal entity))), prHistoryNotes (entityVal entity))
        | entity <- entities
        ]
 
@@ -116,10 +116,10 @@ setLastSyncTime syncTimestamp = do
   pure ()
 
 -- | Get all history entries recorded after the given time.
-getHistorySince :: UTCTime -> SqlPersistM [(Exercise, Double, UTCTime)]
+getHistorySince :: UTCTime -> SqlPersistM [(Exercise, Double, UTCTime, Maybe Text)]
 getHistorySince since = do
   entities <- selectList [PrHistoryRecordedAt >. since] [Asc PrHistoryId]
-  pure [ (prHistoryExercise (entityVal entity), prHistoryWeightKg (entityVal entity), prHistoryRecordedAt (entityVal entity))
+  pure [ (prHistoryExercise (entityVal entity), prHistoryWeightKg (entityVal entity), prHistoryRecordedAt (entityVal entity), prHistoryNotes (entityVal entity))
        | entity <- entities
        ]
 
@@ -141,8 +141,8 @@ mergeRecord exercise weight = do
       pure ()
 
 -- | Insert a history entry if no duplicate exists (same exercise, weight, and timestamp).
-mergeHistoryEntry :: Exercise -> Double -> UTCTime -> SqlPersistM ()
-mergeHistoryEntry exercise weight timestamp = do
+mergeHistoryEntry :: Exercise -> Double -> UTCTime -> Maybe Text -> SqlPersistM ()
+mergeHistoryEntry exercise weight timestamp notes = do
   existing <- selectFirst
     [ PrHistoryExercise ==. exercise
     , PrHistoryWeightKg ==. weight
@@ -150,4 +150,4 @@ mergeHistoryEntry exercise weight timestamp = do
     ] []
   case existing of
     Just _  -> pure ()
-    Nothing -> insert_ $ PrHistory exercise weight timestamp
+    Nothing -> insert_ $ PrHistory exercise weight timestamp notes

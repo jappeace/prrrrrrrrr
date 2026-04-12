@@ -135,8 +135,8 @@ storageTests = sequentialTestGroup "Storage" AllFinish
   [ testCase "saveRecord then loadRecords roundtrip" $ do
       records <- withDatabase $ do
         initDB
-        saveRecord Snatch 80.0
-        saveRecord Deadlift 150.5
+        saveRecord Snatch 80.0 Nothing
+        saveRecord Deadlift 150.5 Nothing
         loadRecords
       Map.lookup Snatch records @?= Just 80.0
       Map.lookup Deadlift records @?= Just 150.5
@@ -144,30 +144,41 @@ storageTests = sequentialTestGroup "Storage" AllFinish
   , testCase "saveRecord overwrites previous value" $ do
       records <- withDatabase $ do
         initDB
-        saveRecord BackSquat 100.0
-        saveRecord BackSquat 110.0
+        saveRecord BackSquat 100.0 Nothing
+        saveRecord BackSquat 110.0 Nothing
         loadRecords
       Map.lookup BackSquat records @?= Just 110.0
 
   , testCase "loadExerciseHistory returns entry after saveRecord" $ do
       history <- withDatabase $ do
         initDB
-        saveRecord FrontSquat 90.0
+        saveRecord FrontSquat 90.0 Nothing
         loadExerciseHistory FrontSquat
       case history of
         [] -> assertFailure "expected at least one history entry"
-        ((weight, _timestamp) : _) -> weight @?= 90.0
+        ((weight, _timestamp, _notes) : _) -> weight @?= 90.0
 
   , testCase "multiple saveRecord calls accumulate in history newest first" $ do
       weights <- withDatabase $ do
         initDB
-        saveRecord PushPress 60.0
-        saveRecord PushPress 65.0
-        saveRecord PushPress 70.0
+        saveRecord PushPress 60.0 Nothing
+        saveRecord PushPress 65.0 Nothing
+        saveRecord PushPress 70.0 Nothing
         history <- loadExerciseHistory PushPress
-        pure (map fst history)
+        pure (map (\(w, _, _) -> w) history)
       -- newest first: 70, 65, 60 (plus any from prior test runs)
       take 3 weights @?= [70.0, 65.0, 60.0]
+
+  , testCase "saveRecord with notes roundtrips through loadExerciseHistory" $ do
+      history <- withDatabase $ do
+        initDB
+        saveRecord CleanAndJerk 95.0 (Just "belt used")
+        loadExerciseHistory CleanAndJerk
+      case history of
+        [] -> assertFailure "expected at least one history entry"
+        ((weight, _timestamp, notes) : _) -> do
+          weight @?= 95.0
+          notes @?= Just "belt used"
   ]
 
 -- | Create a test AppState + AppActions pair.
@@ -210,8 +221,8 @@ viewTests = testGroup "Views"
       widget <- enterPRView actions st Snatch
       case widget of
         Column children ->
-          -- "Set PR:" label + exercise name + TextInput + Row of buttons + Column history = 5
-          length children @?= 5
+          -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
+          length children @?= 6
         Text _          -> assertFailure "expected Column, got Text"
         Button _        -> assertFailure "expected Column, got Button"
         TextInput _     -> assertFailure "expected Column, got TextInput"
@@ -223,14 +234,14 @@ viewTests = testGroup "Views"
         Styled _ _      -> assertFailure "expected Column, got Styled"
         Animated _ _    -> assertFailure "expected Column, got Animated"
 
-  , testCase "enterPRView with history shows entries in 5th Column child" $ do
+  , testCase "enterPRView with history shows entries in 6th Column child" $ do
       (st, actions) <- mkTestActions
-      writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00"), (90.0, "2025-12-01 10:00:00")]
+      writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00", Nothing), (90.0, "2025-12-01 10:00:00", Nothing)]
       widget <- enterPRView actions st Snatch
       case widget of
-        Column [_, _, _, _, Column historyWidgets] ->
+        Column [_, _, _, _, _, Column historyWidgets] ->
           length historyWidgets @?= 2
-        Column _ -> assertFailure "expected 5 children with history Column as 5th"
+        Column _ -> assertFailure "expected 6 children with history Column as 6th"
         _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
@@ -301,19 +312,19 @@ percentageTests = testGroup "Percentage calculator"
 
 confettiTests :: TestTree
 confettiTests = testGroup "Confetti"
-  [ testCase "enterPRView without confetti has 5 children" $ do
+  [ testCase "enterPRView without confetti has 6 children" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
       case widget of
-        Column children -> length children @?= 5
+        Column children -> length children @?= 6
         _               -> assertFailure "expected Column"
 
-  , testCase "enterPRView with confetti has 6 children (overlay + 5 form)" $ do
+  , testCase "enterPRView with confetti has 7 children (overlay + 6 form)" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case widget of
-        Column children -> length children @?= 6
+        Column children -> length children @?= 7
         _               -> assertFailure "expected Column"
 
   , testCase "enterPRView confetti first child is Animated" $ do
@@ -403,8 +414,8 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
       duplicateCount <- withDatabase $ do
         initDB
         now <- liftIO getCurrentTime
-        mergeHistoryEntry Snatch 80.0 now
-        mergeHistoryEntry Snatch 80.0 now  -- duplicate
+        mergeHistoryEntry Snatch 80.0 now Nothing
+        mergeHistoryEntry Snatch 80.0 now Nothing  -- duplicate
         matches <- selectList
           [ PrHistoryExercise ==. Snatch
           , PrHistoryWeightKg ==. 80.0
@@ -418,8 +429,8 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
         initDB
         now <- liftIO getCurrentTime
         let later = addUTCTime 60 now
-        mergeHistoryEntry Snatch 80.0 now
-        mergeHistoryEntry Snatch 85.0 later  -- different timestamp and weight
+        mergeHistoryEntry Snatch 80.0 now Nothing
+        mergeHistoryEntry Snatch 85.0 later Nothing  -- different timestamp and weight
         nowMatches <- selectList
           [ PrHistoryExercise ==. Snatch
           , PrHistoryRecordedAt ==. now
@@ -438,15 +449,15 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
         let past = addUTCTime (-120) now
             middle = addUTCTime (-60) now
         -- Insert entries at specific times
-        insert_ $ PrHistory OverheadSquat 70.0 past
-        insert_ $ PrHistory OverheadSquat 75.0 now
+        insert_ $ PrHistory OverheadSquat 70.0 past Nothing
+        insert_ $ PrHistory OverheadSquat 75.0 now Nothing
         entries <- getHistorySince middle
-        pure $ filter (\(ex, _, _) -> ex == OverheadSquat) entries
+        pure $ filter (\(ex, _, _, _) -> ex == OverheadSquat) entries
       -- Only the entry at 'now' should be returned (past < middle, now > middle)
       length ohsEntries @?= 1
       case ohsEntries of
-        [(_, weight, _)] -> weight @?= 75.0
-        _                -> assertFailure "expected exactly one OHS entry"
+        [(_, weight, _, _)] -> weight @?= 75.0
+        _                   -> assertFailure "expected exactly one OHS entry"
 
   , testCase "sync_meta roundtrip for last sync time" $ do
       (noSync, retrieved, now) <- withDatabase $ do
