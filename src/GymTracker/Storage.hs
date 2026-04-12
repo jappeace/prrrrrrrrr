@@ -1,18 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 -- | Persistent-backed storage for PR records.
 --
 -- Uses persistent + persistent-sqlite for type-safe database access.
 -- The database is stored at @get_app_files_dir() ++ "/prrrrrrrrr.db"@.
+--
+-- The persistent schema definitions (Template Haskell) live in
+-- 'GymTracker.Schema' in the @prrrrrrrrr-schema@ package so that
+-- TH runs during the cross-deps build (which has iserv-proxy).
 module GymTracker.Storage
   ( withDatabase
   , initDB
@@ -40,11 +35,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Time (UTCTime, getCurrentTime)
 import Database.Persist
   ( Entity(..)
-  , EntityField
-  , PersistField(..)
-  , PersistValue(..)
   , SelectOpt(..)
-  , Unique
   , (=.)
   , (==.)
   , (>.)
@@ -54,42 +45,21 @@ import Database.Persist
   , selectList
   , upsertBy
   )
-import Database.Persist.Sql (PersistFieldSql(..), SqlPersistM, SqlType(..), runMigration)
+import Database.Persist.Sql (SqlPersistM, runMigration)
 import Database.Persist.Sqlite (runSqlite)
-import Database.Persist.TH (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 import Foreign.C.String (CString, peekCString)
-import GymTracker.Model (Exercise(..), exerciseName, parseExercise)
+import GymTracker.Model (Exercise(..))
+import GymTracker.Schema
+  ( PrRecord(..)
+  , PrHistory(..)
+  , SyncMeta(..)
+  , EntityField(..)
+  , Unique(..)
+  , migrateAll
+  )
 
 foreign import ccall "get_app_files_dir"
   c_get_app_files_dir :: IO CString
-
--- | PersistField instance for Exercise — serialised as its human-readable name.
-instance PersistField Exercise where
-  toPersistValue = PersistText . exerciseName
-  fromPersistValue (PersistText t) = case parseExercise t of
-    Just exercise -> Right exercise
-    Nothing       -> Left ("Unknown exercise: " <> t)
-  fromPersistValue other = Left ("Expected PersistText for Exercise, got: " <> pack (show other))
-
-instance PersistFieldSql Exercise where
-  sqlType _ = SqlString
-
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-PrRecord
-  exercise Exercise
-  weightKg Double
-  UniqueExercise exercise
-
-PrHistory
-  exercise Exercise
-  weightKg Double
-  recordedAt UTCTime
-
-SyncMeta
-  key Text
-  value Text
-  UniqueSyncKey key
-|]
 
 -- | Get the database file path.
 getDbPath :: IO FilePath
