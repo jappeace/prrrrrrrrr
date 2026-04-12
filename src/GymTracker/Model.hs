@@ -1,10 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Core exercise model for the gym PR tracker.
---
--- This module lives in the schema package so that the persistent TH
--- definitions in 'GymTracker.Schema' can reference the 'Exercise' type
--- without pulling in haskell-mobile (which is only available in the
--- consumer build, not in cross-deps).
 module GymTracker.Model
   ( Exercise(..)
   , allExercises
