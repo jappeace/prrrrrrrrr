@@ -28,7 +28,7 @@ import GymTracker.Model
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
 import GymTracker.Sync (triggerSync)
 import HaskellMobile (Action, OnChange, ActionM, createAction, createOnChange)
-import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
+import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextAlignment(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
 
 -- | Pre-created callback handles for all UI interactions.
 -- Created once at init time via 'createAppActions'.
@@ -93,7 +93,7 @@ exerciseListView :: AppActions -> AppState -> IO Widget
 exerciseListView actions st = do
   records <- readIORef (stRecords st)
   let categorySection cat =
-        Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing }
+        Styled centeredText (Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing })
           : map (exerciseButton actions records) (exercisesInCategory cat)
       children = Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing }
           : concatMap categorySection allCategories
@@ -167,6 +167,10 @@ parseWeight t =
   case reads (unpack t) of
     [(w, "")] | w > 0 -> Just w
     _                  -> Nothing
+
+-- | Center-aligned text for category headers.
+centeredText :: WidgetStyle
+centeredText = defaultStyle { wsTextAlign = Just AlignCenter }
 
 -- | Padding for round watch screens — keeps content away from curved edges.
 roundScreenPadding :: WidgetStyle

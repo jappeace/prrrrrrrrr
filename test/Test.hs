@@ -27,7 +27,7 @@ import GymTracker.Model
   )
 import GymTracker.Storage (withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory, getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry)
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions)
-import HaskellMobile.Widget (TextConfig(..), Widget(..))
+import HaskellMobile.Widget (TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import HaskellMobile (newActionState, runActionM)
 
 import Data.ByteString qualified as BS
@@ -185,14 +185,18 @@ viewTests = testGroup "Views"
         ScrollView _ -> assertFailure "expected ScrollView with single Column child"
         _            -> assertFailure "expected ScrollView"
 
-  , testCase "exerciseListView second Column child is Text Snatches category header" $ do
+  , testCase "exerciseListView second Column child is centered Text Snatches category header" $ do
       (st, actions) <- mkTestActions
       widget <- exerciseListView actions st
       case widget of
         ScrollView [Column (_ : secondChild : _)] ->
           case secondChild of
-            Text config -> tcLabel config @?= categoryName Snatches
-            _           -> assertFailure "expected Text for category header"
+            Styled style (Text config) -> do
+              tcLabel config @?= categoryName Snatches
+              wsTextAlign style @?= Just AlignCenter
+            Styled _ _  -> assertFailure "expected Styled wrapping Text"
+            Text _      -> assertFailure "expected Styled Text, got bare Text"
+            _           -> assertFailure "expected Styled Text for category header"
         ScrollView _ -> assertFailure "expected at least 2 children in Column"
         _            -> assertFailure "expected ScrollView"
 
