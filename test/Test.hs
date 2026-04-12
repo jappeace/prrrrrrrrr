@@ -29,7 +29,7 @@ import GymTracker.Storage
   , getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry
   , PrHistory(..), EntityField(..)
   )
-import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions)
+import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage)
 import HaskellMobile.Widget (TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import HaskellMobile (newActionState, runActionM)
 
@@ -78,6 +78,7 @@ tests = testGroup "prrrrrrrrr"
   [ modelTests
   , sequentialTestGroup "Database" AllFinish [storageTests, syncDbTests]
   , viewTests
+  , percentageTests
   , parseTests
   , syncPureTests
   , servantNativeTests
@@ -183,24 +184,24 @@ viewTests = testGroup "Views"
       widget <- exerciseListView actions st
       case widget of
         ScrollView [Column children] ->
-          -- 1 title + 5 category headers + 12 exercise buttons = 18
-          length children @?= 18
+          -- 1 title + 1 percentage input + 5 category headers + 12 exercise buttons = 19
+          length children @?= 19
         ScrollView _ -> assertFailure "expected ScrollView with single Column child"
         _            -> assertFailure "expected ScrollView"
 
-  , testCase "exerciseListView second Column child is centered Text Snatches category header" $ do
+  , testCase "exerciseListView third Column child is centered Text Snatches category header" $ do
       (st, actions) <- mkTestActions
       widget <- exerciseListView actions st
       case widget of
-        ScrollView [Column (_ : secondChild : _)] ->
-          case secondChild of
+        ScrollView [Column (_ : _ : thirdChild : _)] ->
+          case thirdChild of
             Styled style (Text config) -> do
               tcLabel config @?= categoryName Snatches
               wsTextAlign style @?= Just AlignCenter
             Styled _ _  -> assertFailure "expected Styled wrapping Text"
             Text _      -> assertFailure "expected Styled Text, got bare Text"
             _           -> assertFailure "expected Styled Text for category header"
-        ScrollView _ -> assertFailure "expected at least 2 children in Column"
+        ScrollView _ -> assertFailure "expected at least 3 children in Column"
         _            -> assertFailure "expected ScrollView"
 
   , testCase "enterPRView returns Column with input, buttons, and history section" $ do
@@ -250,6 +251,50 @@ viewTests = testGroup "Views"
       writeIORef (stScreen st) ExerciseList
       screen2 <- readIORef (stScreen st)
       screen2 @?= ExerciseList
+  ]
+
+percentageTests :: TestTree
+percentageTests = testGroup "Percentage calculator"
+  [ testCase "calculatePercentage 80kg at 80% = 64.0" $
+      calculatePercentage 80.0 80 @?= 64.0
+
+  , testCase "calculatePercentage 100kg at 50% = 50.0" $
+      calculatePercentage 100.0 50 @?= 50.0
+
+  , testCase "calculatePercentage 100kg at 100% = 100.0" $
+      calculatePercentage 100.0 100 @?= 100.0
+
+  , testCase "exerciseListView adds percentage rows when percentage is set" $ do
+      st <- newAppState (Map.fromList [(Snatch, 80.0), (Deadlift, 150.0)])
+      writeIORef (stPercentage st) 80
+      actionSt <- newActionState
+      actions <- runActionM actionSt (createAppActions st)
+      widget <- exerciseListView actions st
+      case widget of
+        ScrollView [Column children] ->
+          -- 1 title + 1 percentage input + 5 category headers
+          -- + 12 exercise buttons + 2 percentage text rows (Snatch + Deadlift have PRs)
+          -- = 21
+          length children @?= 21
+        ScrollView _ -> assertFailure "expected ScrollView with single Column child"
+        _            -> assertFailure "expected ScrollView"
+
+  , testCase "exerciseListView percentage row shows correct calculated weight" $ do
+      st <- newAppState (Map.fromList [(Snatch, 80.0)])
+      writeIORef (stPercentage st) 80
+      actionSt <- newActionState
+      actions <- runActionM actionSt (createAppActions st)
+      widget <- exerciseListView actions st
+      case widget of
+        ScrollView [Column children] ->
+          -- Find the percentage text row after the Snatch button
+          -- Layout: title, %input, "Snatches" header, Snatch button, percentage text, ...
+          case drop 3 children of  -- skip title, %input, Snatches header
+            (_button : Styled _style (Text config) : _) ->
+              tcLabel config @?= "64.0 kg @ 80%"
+            _ -> assertFailure "expected button followed by percentage text"
+        ScrollView _ -> assertFailure "expected ScrollView with single Column child"
+        _            -> assertFailure "expected ScrollView"
   ]
 
 -- | Replicate the parseWeight logic from Views for testing.

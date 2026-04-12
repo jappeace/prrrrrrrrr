@@ -7,6 +7,7 @@ module GymTracker.Views
   , exerciseListView
   , enterPRView
   , appRootView
+  , calculatePercentage
   )
 where
 
@@ -40,6 +41,8 @@ data AppActions = AppActions
     -- ^ Navigate back to the exercise list.
   , aaWeightInput     :: OnChange
     -- ^ Text input change handler for weight entry.
+  , aaPercentageInput :: OnChange
+    -- ^ Text input change handler for percentage entry on exercise list.
   }
 
 -- | Create all 'Action' / 'OnChange' handles for the app.
@@ -50,11 +53,14 @@ createAppActions st = do
   saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
   back            <- createAction (writeIORef (stScreen st) ExerciseList)
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
+  percentageInput <- createOnChange (\t ->
+    writeIORef (stPercentage st) (parsePercentage t))
   pure AppActions
     { aaExerciseButtons = exerciseButtons
     , aaSaveButtons     = saveButtons
     , aaBackButton      = back
     , aaWeightInput     = weightInput
+    , aaPercentageInput = percentageInput
     }
   where
     mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
@@ -90,22 +96,44 @@ exercisesInCategory cat = filter (\ex -> exerciseCategory ex == cat) allExercise
 -- | Exercise list screen: shows exercises grouped by category inside a scroll view.
 exerciseListView :: AppActions -> AppState -> IO Widget
 exerciseListView actions st = do
-  records <- readIORef (stRecords st)
-  let categorySection cat =
+  records    <- readIORef (stRecords st)
+  percentage <- readIORef (stPercentage st)
+  let percentageRow = Styled centeredText $ TextInput TextInputConfig
+        { tiInputType = InputNumber
+        , tiHint      = "% of 1RM"
+        , tiValue     = if percentage == 0 then "" else pack (show percentage)
+        , tiOnChange  = aaPercentageInput actions
+        , tiFontConfig = Nothing
+        }
+      categorySection cat =
         Styled centeredText (Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing })
-          : map (exerciseButton actions records) (exercisesInCategory cat)
+          : concatMap (exerciseWithPercentage actions records percentage) (exercisesInCategory cat)
       children = Styled centeredText (Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing })
+          : percentageRow
           : concatMap categorySection allCategories
   pure $ ScrollView [Column children]
 
--- | A single exercise button that navigates to the EnterPR screen and loads history.
-exerciseButton :: AppActions -> Map Exercise Double -> Exercise -> Widget
-exerciseButton actions records ex =
-  Button ButtonConfig
-    { bcLabel = exerciseLabel records ex
-    , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaExerciseButtons actions)
-    , bcFontConfig = Nothing
-    }
+-- | A single exercise button, optionally followed by a calculated percentage text.
+-- Returns one widget (button only) when percentage is 0 or the exercise has no PR,
+-- or two widgets (button + calculated weight) when both are present.
+exerciseWithPercentage :: AppActions -> Map Exercise Double -> Word -> Exercise -> [Widget]
+exerciseWithPercentage actions records percentage ex =
+  let button = Button ButtonConfig
+        { bcLabel = exerciseLabel records ex
+        , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaExerciseButtons actions)
+        , bcFontConfig = Nothing
+        }
+  in case Map.lookup ex records of
+    Just prWeight | percentage > 0 ->
+      let calculated = calculatePercentage prWeight percentage
+      in [ button
+         , Styled centeredText $ Text TextConfig
+             { tcLabel = formatWeight calculated <> " @ " <> pack (show percentage) <> "%"
+             , tcFontConfig = Nothing
+             }
+         ]
+    Just _  -> [button]
+    Nothing -> [button]
 
 -- | Enter PR screen: text input for weight + save/back buttons + history log.
 enterPRView :: AppActions -> AppState -> Exercise -> IO Widget
@@ -167,6 +195,18 @@ parseWeight t =
   case reads (unpack t) of
     [(w, "")] | w > 0 -> Just w
     _                  -> Nothing
+
+-- | Calculate a percentage of a 1RM weight.
+calculatePercentage :: Double -> Word -> Double
+calculatePercentage prWeight percentage =
+  prWeight * fromIntegral percentage / 100.0
+
+-- | Parse a percentage string to a 'Word', defaulting to 0 on invalid input.
+parsePercentage :: Text -> Word
+parsePercentage t =
+  case reads (unpack t) of
+    [(n, "")] | n > 0, n <= 100 -> n
+    _                            -> 0
 
 -- | Center-aligned text for category headers.
 centeredText :: WidgetStyle

@@ -32,6 +32,8 @@ data AppState = AppState
   , stHistory         :: IORef [(Double, Text)]  -- ^ weight + timestamp, newest first
   , stHttpState       :: IORef (Maybe HttpState)
   , stNeedsSyncOnBoot :: IORef Bool
+  , stPercentage      :: IORef Word
+    -- ^ Percentage of 1RM to calculate (0 = disabled).
   }
 
 -- | Create a fresh 'AppState' with the given initial records.
@@ -43,6 +45,7 @@ newAppState initialRecords = do
   history         <- newIORef []
   httpState       <- newIORef Nothing
   needsSyncOnBoot <- newIORef True
+  percentage      <- newIORef 0
   pure AppState
     { stScreen          = screen
     , stRecords         = records
@@ -50,4 +53,5 @@ newAppState initialRecords = do
     , stHistory         = history
     , stHttpState       = httpState
     , stNeedsSyncOnBoot = needsSyncOnBoot
+    , stPercentage      = percentage
     }
