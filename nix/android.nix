@@ -15,13 +15,8 @@ let
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkAndroidLib.
-  # Schema package — built as a cross-dep so its Template Haskell
-  # runs with iserv-proxy / -fexternal-interpreter.
-  schemaSrc = ../schema;
-
   consumerCabal2Nix =
     { mkDerivation, base, containers, lib, persistent, persistent-sqlite, text
-    , prrrrrrrrr-schema
     , pr-sync-api
     , servant, servant-client-core
     , http-types, http-media, case-insensitive, mtl, bytestring, time
@@ -31,7 +26,6 @@ let
       version = "0.1.0.0";
       libraryHaskellDepends = [
         base containers persistent persistent-sqlite text
-        prrrrrrrrr-schema
         pr-sync-api
         servant servant-client-core
         http-types http-media case-insensitive mtl bytestring time
@@ -42,7 +36,6 @@ let
   crossDeps = import "${haskellMobileSrc}/nix/cross-deps.nix" {
     inherit sources androidArch consumerCabal2Nix;
     hpkgs = self: super: {
-      prrrrrrrrr-schema = self.callCabal2nix "prrrrrrrrr-schema" schemaSrc {};
       pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
       # nixpkgs enables -fsystemlib which links against the system sqlite C
       # library.  That pulls in tcl → tzdata which fails to cross-compile for
@@ -87,6 +80,8 @@ lib.mkAndroidLib {
     cp ${../src/HaskellMobile/App.hs} HaskellMobile/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
+    cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
+    cp ${../src/GymTracker/Schema.hs} GymTracker/Schema.hs
     cp ${../src/GymTracker/ServantNative.hs} GymTracker/ServantNative.hs
     cp ${../src/GymTracker/Storage.hs} GymTracker/Storage.hs
     cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs
