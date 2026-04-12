@@ -29,8 +29,8 @@ import GymTracker.Storage
   , getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry
   , PrHistory(..), EntityField(..)
   )
-import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage)
-import HaskellMobile.Widget (TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
+import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
+import HaskellMobile.Widget (AnimatedConfig(..), Easing(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import HaskellMobile (newActionState, runActionM)
 
 import Data.ByteString qualified as BS
@@ -79,6 +79,7 @@ tests = testGroup "prrrrrrrrr"
   , sequentialTestGroup "Database" AllFinish [storageTests, syncDbTests]
   , viewTests
   , percentageTests
+  , confettiTests
   , parseTests
   , syncPureTests
   , servantNativeTests
@@ -220,6 +221,7 @@ viewTests = testGroup "Views"
         WebView _       -> assertFailure "expected Column, got WebView"
         MapView _       -> assertFailure "expected Column, got MapView"
         Styled _ _      -> assertFailure "expected Column, got Styled"
+        Animated _ _    -> assertFailure "expected Column, got Animated"
 
   , testCase "enterPRView with history shows entries in 5th Column child" $ do
       (st, actions) <- mkTestActions
@@ -295,6 +297,41 @@ percentageTests = testGroup "Percentage calculator"
             _ -> assertFailure "expected button followed by percentage text"
         ScrollView _ -> assertFailure "expected ScrollView with single Column child"
         _            -> assertFailure "expected ScrollView"
+  ]
+
+confettiTests :: TestTree
+confettiTests = testGroup "Confetti"
+  [ testCase "enterPRView without confetti has 5 children" $ do
+      (st, actions) <- mkTestActions
+      widget <- enterPRView actions st Snatch
+      case widget of
+        Column children -> length children @?= 5
+        _               -> assertFailure "expected Column"
+
+  , testCase "enterPRView with confetti has 6 children (overlay + 5 form)" $ do
+      (st, actions) <- mkTestActions
+      writeIORef (stConfetti st) True
+      widget <- enterPRView actions st Snatch
+      case widget of
+        Column children -> length children @?= 6
+        _               -> assertFailure "expected Column"
+
+  , testCase "enterPRView confetti first child is Animated" $ do
+      (st, actions) <- mkTestActions
+      writeIORef (stConfetti st) True
+      widget <- enterPRView actions st Snatch
+      case widget of
+        Column (Animated config _ : _) -> do
+          anDuration config @?= 1200
+          anEasing config @?= EaseOut
+        Column _ -> assertFailure "expected first child to be Animated"
+        _        -> assertFailure "expected Column"
+
+  , testCase "confettiOverlay contains 8 particles in a Row" $
+      case confettiOverlay of
+        Animated _ (Row particles) -> length particles @?= 8
+        Animated _ _               -> assertFailure "expected Row inside Animated"
+        _                          -> assertFailure "expected Animated"
   ]
 
 -- | Replicate the parseWeight logic from Views for testing.
