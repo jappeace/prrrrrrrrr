@@ -8,6 +8,7 @@ module GymTracker.Views
   , enterPRView
   , appRootView
   , calculatePercentage
+  , confettiOverlay
   )
 where
 
@@ -28,7 +29,19 @@ import GymTracker.Model
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
 import GymTracker.Sync (triggerSync)
 import HaskellMobile (Action, OnChange, ActionM, createAction, createOnChange)
-import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextAlignment(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
+import HaskellMobile.Widget
+  ( AnimatedConfig(..)
+  , ButtonConfig(..)
+  , Color(..)
+  , Easing(..)
+  , InputType(..)
+  , TextAlignment(..)
+  , TextConfig(..)
+  , TextInputConfig(..)
+  , Widget(..)
+  , WidgetStyle(..)
+  , defaultStyle
+  )
 
 -- | Pre-created callback handles for all UI interactions.
 -- Created once at init time via 'createAppActions'.
@@ -51,7 +64,9 @@ createAppActions :: AppState -> ActionM AppActions
 createAppActions st = do
   exerciseButtons <- fmap Map.fromList $ mapM mkExerciseAction allExercises
   saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
-  back            <- createAction (writeIORef (stScreen st) ExerciseList)
+  back            <- createAction $ do
+    writeIORef (stConfetti st) False
+    writeIORef (stScreen st) ExerciseList
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
   percentageInput <- createOnChange (\t ->
     writeIORef (stPercentage st) (parsePercentage t))
@@ -68,6 +83,7 @@ createAppActions st = do
       action <- createAction $ do
         history <- withDatabase $ loadExerciseHistory ex
         writeIORef (stHistory st) history
+        writeIORef (stConfetti st) False
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
       pure (ex, action)
@@ -136,37 +152,74 @@ exerciseWithPercentage actions records percentage ex =
     Nothing -> [button]
 
 -- | Enter PR screen: text input for weight + save/back buttons + history log.
+-- Shows a confetti animation overlay after a successful save.
 enterPRView :: AppActions -> AppState -> Exercise -> IO Widget
 enterPRView actions st ex = do
-  inputVal <- readIORef (stInputText st)
-  history  <- readIORef (stHistory st)
+  inputVal    <- readIORef (stInputText st)
+  history     <- readIORef (stHistory st)
+  showConfetti <- readIORef (stConfetti st)
   let historyWidgets = map historyEntry history
-  pure $ Column
-    [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
-    , Styled centeredText $ Text TextConfig { tcLabel = exerciseName ex, tcFontConfig = Nothing }
-    , Styled centeredText $ TextInput TextInputConfig
-        { tiInputType = InputNumber
-        , tiHint      = "Weight (kg)"
-        , tiValue     = inputVal
-        , tiOnChange  = aaWeightInput actions
-        , tiFontConfig = Nothing
-        }
-    , Row
-        [ Button ButtonConfig
-            { bcLabel = "Save"
-            , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaSaveButtons actions)
-            , bcFontConfig = Nothing
+      formWidgets =
+        [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
+        , Styled centeredText $ Text TextConfig { tcLabel = exerciseName ex, tcFontConfig = Nothing }
+        , Styled centeredText $ TextInput TextInputConfig
+            { tiInputType = InputNumber
+            , tiHint      = "Weight (kg)"
+            , tiValue     = inputVal
+            , tiOnChange  = aaWeightInput actions
+            , tiFontConfig = Nothing
             }
-        , Button ButtonConfig
-            { bcLabel = "Back", bcAction = aaBackButton actions, bcFontConfig = Nothing }
+        , Row
+            [ Button ButtonConfig
+                { bcLabel = "Save"
+                , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaSaveButtons actions)
+                , bcFontConfig = Nothing
+                }
+            , Button ButtonConfig
+                { bcLabel = "Back", bcAction = aaBackButton actions, bcFontConfig = Nothing }
+            ]
+        , Column historyWidgets
         ]
-    , Column historyWidgets
-    ]
+  pure $ Column $
+    if showConfetti
+      then confettiOverlay : formWidgets
+      else formWidgets
 
 -- | Render a single history entry.
 historyEntry :: (Double, Text) -> Widget
 historyEntry (weight, timestamp) = Styled centeredText $ Text TextConfig
   { tcLabel = timestamp <> ": " <> formatWeight weight, tcFontConfig = Nothing }
+
+-- | Confetti animation overlay — a row of animated colored particles.
+-- Shown on the EnterPR screen after saving a new personal record.
+confettiOverlay :: Widget
+confettiOverlay =
+  Animated (AnimatedConfig 1200 EaseOut) $
+    Row
+      [ confettiParticle gold    (-30) (-5)
+      , confettiParticle red     (-12) 8
+      , confettiParticle green   10    (-3)
+      , confettiParticle blue    25    6
+      , confettiParticle magenta (-20) 12
+      , confettiParticle cyan    18    (-8)
+      , confettiParticle gold    5     10
+      , confettiParticle red     (-8)  (-12)
+      ]
+  where
+    confettiParticle :: Color -> Double -> Double -> Widget
+    confettiParticle color offsetX offsetY =
+      Styled (defaultStyle
+        { wsTextColor  = Just color
+        , wsTranslateX = Just offsetX
+        , wsTranslateY = Just offsetY
+        }) (Text TextConfig { tcLabel = "*", tcFontConfig = Nothing })
+    gold, red, green, blue, magenta, cyan :: Color
+    gold    = Color 255 215 0   255
+    red     = Color 255 68  68  255
+    green   = Color 68  255 68  255
+    blue    = Color 68  68  255 255
+    magenta = Color 255 68  255 255
+    cyan    = Color 68  255 255 255
 
 -- | Attempt to parse the input and save the PR, then reload history without navigating away.
 -- Invalid input (empty, non-numeric, non-positive) is silently ignored.
@@ -180,6 +233,7 @@ savePR st ex = do
       history <- withDatabase $ loadExerciseHistory ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
+      writeIORef (stConfetti st) True
       triggerSync st
     Nothing -> pure ()
   where
