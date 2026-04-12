@@ -208,8 +208,8 @@ viewTests = testGroup "Views"
       widget <- enterPRView actions st Snatch
       case widget of
         Column children ->
-          -- Title + TextInput + Row of buttons + Column history = 4
-          length children @?= 4
+          -- "Set PR:" label + exercise name + TextInput + Row of buttons + Column history = 5
+          length children @?= 5
         Text _          -> assertFailure "expected Column, got Text"
         Button _        -> assertFailure "expected Column, got Button"
         TextInput _     -> assertFailure "expected Column, got TextInput"
@@ -220,21 +220,21 @@ viewTests = testGroup "Views"
         MapView _       -> assertFailure "expected Column, got MapView"
         Styled _ _      -> assertFailure "expected Column, got Styled"
 
-  , testCase "enterPRView with history shows entries in 4th Column child" $ do
+  , testCase "enterPRView with history shows entries in 5th Column child" $ do
       (st, actions) <- mkTestActions
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00"), (90.0, "2025-12-01 10:00:00")]
       widget <- enterPRView actions st Snatch
       case widget of
-        Column [_, _, _, Column historyWidgets] ->
+        Column [_, _, _, _, Column historyWidgets] ->
           length historyWidgets @?= 2
-        Column _ -> assertFailure "expected 4 children with history Column as 4th"
+        Column _ -> assertFailure "expected 5 children with history Column as 5th"
         _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
       (st, actions) <- mkTestActions
       widget <- appRootView actions st
       case widget of
-        Styled _ (ScrollView [Column (Text config : _)]) ->
+        Styled _ (ScrollView [Column (Styled _ (Text config) : _)]) ->
           tcLabel config @?= "PRRRRRRRRR"
         Styled _ (ScrollView _) -> assertFailure "expected ScrollView with Column as first child"
         Styled _ _              -> assertFailure "expected Styled wrapping ScrollView"
