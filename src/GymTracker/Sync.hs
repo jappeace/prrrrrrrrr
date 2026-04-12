@@ -18,11 +18,11 @@ where
 
 import Control.Concurrent (forkIO)
 import Control.Exception (SomeException, catch)
+import Control.Monad.IO.Class (liftIO)
 import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
-import Database.SQLite.Simple (Connection)
 import GymTracker.Config (serverBaseUrl, apiKey)
 import GymTracker.Model
   ( AppState(..)
@@ -31,7 +31,8 @@ import GymTracker.Model
   )
 import GymTracker.ServantNative (NativeClientM, runNativeClientM, mkNativeClientEnv)
 import GymTracker.Storage
-  ( withDatabase
+  ( SqlPersistM
+  , withDatabase
   , loadRecords
   , getLastSyncTime
   , setLastSyncTime
@@ -79,21 +80,21 @@ syncAction :: AppState -> HttpState -> IO ()
 syncAction appState httpState = do
   baseUrl <- parseBaseUrl serverBaseUrl
   let clientEnv = mkNativeClientEnv httpState baseUrl
-  withDatabase $ \conn -> do
-    lastSync <- getLastSyncTime conn
+  withDatabase $ do
+    lastSync <- getLastSyncTime
     case lastSync of
       Nothing -> do
-        platformLog "Sync: first boot, fetching full state"
-        result <- runNativeClientM (recordsClient apiKey) clientEnv
+        liftIO $ platformLog "Sync: first boot, fetching full state"
+        result <- liftIO $ runNativeClientM (recordsClient apiKey) clientEnv
         case result of
-          Left err -> platformLog ("Sync GET /api/records failed: " <> pack (show err))
+          Left err -> liftIO $ platformLog ("Sync GET /api/records failed: " <> pack (show err))
           Right fullState -> do
-            mergeFullState conn appState fullState
-            platformLog "Sync: full state merged"
+            mergeFullState appState fullState
+            liftIO $ platformLog "Sync: full state merged"
       Just since -> do
-        platformLog "Sync: incremental sync"
-        records <- loadRecords conn
-        historySince <- getHistorySince conn since
+        liftIO $ platformLog "Sync: incremental sync"
+        records <- loadRecords
+        historySince <- getHistorySince since
         let currentRecords = map (\(exercise, weight) ->
               CurrentRecord
                 { recordExercise = exerciseName exercise
@@ -110,43 +111,43 @@ syncAction appState httpState = do
               , syncCurrentRecords = currentRecords
               , syncHistory = historyEntries
               }
-        result <- runNativeClientM (syncClient apiKey syncReq) clientEnv
+        result <- liftIO $ runNativeClientM (syncClient apiKey syncReq) clientEnv
         case result of
-          Left err -> platformLog ("Sync POST /api/sync failed: " <> pack (show err))
+          Left err -> liftIO $ platformLog ("Sync POST /api/sync failed: " <> pack (show err))
           Right syncResp -> do
-            mergeSyncResponse conn appState syncResp
-            platformLog "Sync: incremental merge done"
+            mergeSyncResponse appState syncResp
+            liftIO $ platformLog "Sync: incremental merge done"
 
 -- | Merge a full state dump from the server into local DB and IORefs.
-mergeFullState :: Connection -> AppState -> FullState -> IO ()
-mergeFullState conn appState fullState = do
+mergeFullState :: AppState -> FullState -> SqlPersistM ()
+mergeFullState appState fullState = do
   mapM_ (\cr -> case parseExercise (recordExercise cr) of
-    Just exercise -> mergeRecord conn exercise (recordWeightKg cr)
+    Just exercise -> mergeRecord exercise (recordWeightKg cr)
     Nothing       -> pure ()
     ) (fullCurrentRecords fullState)
   mapM_ (\he -> case parseExercise (historyExercise he) of
-    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he)
+    Just exercise -> mergeHistoryEntry exercise (historyWeightKg he) (historyRecordedAt he)
     Nothing       -> pure ()
     ) (fullHistory fullState)
-  setLastSyncTime conn (fullSyncTime fullState)
-  refreshRecordsIORef conn appState
+  setLastSyncTime (fullSyncTime fullState)
+  refreshRecordsIORef appState
 
 -- | Merge an incremental sync response into local DB and IORefs.
-mergeSyncResponse :: Connection -> AppState -> SyncResponse -> IO ()
-mergeSyncResponse conn appState syncResp = do
+mergeSyncResponse :: AppState -> SyncResponse -> SqlPersistM ()
+mergeSyncResponse appState syncResp = do
   mapM_ (\cr -> case parseExercise (recordExercise cr) of
-    Just exercise -> mergeRecord conn exercise (recordWeightKg cr)
+    Just exercise -> mergeRecord exercise (recordWeightKg cr)
     Nothing       -> pure ()
     ) (syncedCurrentRecords syncResp)
   mapM_ (\he -> case parseExercise (historyExercise he) of
-    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he)
+    Just exercise -> mergeHistoryEntry exercise (historyWeightKg he) (historyRecordedAt he)
     Nothing       -> pure ()
     ) (syncedHistory syncResp)
-  setLastSyncTime conn (syncTime syncResp)
-  refreshRecordsIORef conn appState
+  setLastSyncTime (syncTime syncResp)
+  refreshRecordsIORef appState
 
 -- | Reload records from DB into the AppState IORef so the UI reflects merged data.
-refreshRecordsIORef :: Connection -> AppState -> IO ()
-refreshRecordsIORef conn appState = do
-  records <- loadRecords conn
-  writeIORef (stRecords appState) records
+refreshRecordsIORef :: AppState -> SqlPersistM ()
+refreshRecordsIORef appState = do
+  records <- loadRecords
+  liftIO $ writeIORef (stRecords appState) records

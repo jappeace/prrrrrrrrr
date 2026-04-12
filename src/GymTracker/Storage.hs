@@ -1,8 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ImportQualifiedPost #-}
--- | SQLite-backed storage for PR records.
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+-- | Persistent-backed storage for PR records.
 --
--- Uses sqlite-simple for database access.
+-- Uses persistent + persistent-sqlite for type-safe database access.
 -- The database is stored at @get_app_files_dir() ++ "/prrrrrrrrr.db"@.
 module GymTracker.Storage
   ( withDatabase
@@ -15,20 +24,72 @@ module GymTracker.Storage
   , getHistorySince
   , mergeRecord
   , mergeHistoryEntry
+  , SqlPersistM
+  , PrRecord(..)
+  , PrHistory(..)
+  , SyncMeta(..)
+  , EntityField(..)
+  , Unique(..)
   )
 where
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Data.Time (UTCTime)
-import Database.SQLite.Simple (Connection)
-import Database.SQLite.Simple qualified as SQLite
+import Data.Text (Text, pack, unpack)
+import Data.Time (UTCTime, getCurrentTime)
+import Database.Persist
+  ( Entity(..)
+  , EntityField
+  , PersistField(..)
+  , PersistValue(..)
+  , SelectOpt(..)
+  , Unique
+  , (=.)
+  , (==.)
+  , (>.)
+  , getBy
+  , insert_
+  , selectFirst
+  , selectList
+  , upsertBy
+  )
+import Database.Persist.Sql (PersistFieldSql(..), SqlPersistM, SqlType(..), runMigration)
+import Database.Persist.Sqlite (runSqlite)
+import Database.Persist.TH (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 import Foreign.C.String (CString, peekCString)
-import GymTracker.Model (Exercise(..), allExercises, exerciseName)
+import GymTracker.Model (Exercise(..), exerciseName, parseExercise)
 
 foreign import ccall "get_app_files_dir"
   c_get_app_files_dir :: IO CString
+
+-- | PersistField instance for Exercise — serialised as its human-readable name.
+instance PersistField Exercise where
+  toPersistValue = PersistText . exerciseName
+  fromPersistValue (PersistText t) = case parseExercise t of
+    Just exercise -> Right exercise
+    Nothing       -> Left ("Unknown exercise: " <> t)
+  fromPersistValue other = Left ("Expected PersistText for Exercise, got: " <> pack (show other))
+
+instance PersistFieldSql Exercise where
+  sqlType _ = SqlString
+
+share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+PrRecord
+  exercise Exercise
+  weightKg Double
+  UniqueExercise exercise
+
+PrHistory
+  exercise Exercise
+  weightKg Double
+  recordedAt UTCTime
+
+SyncMeta
+  key Text
+  value Text
+  UniqueSyncKey key
+|]
 
 -- | Get the database file path.
 getDbPath :: IO FilePath
@@ -36,108 +97,91 @@ getDbPath = do
   dir <- c_get_app_files_dir >>= peekCString
   pure (dir ++ "/prrrrrrrrr.db")
 
--- | Open the database, run an action, then close it.
-withDatabase :: (Connection -> IO a) -> IO a
+-- | Open the database, run a persistent action, then close it.
+withDatabase :: SqlPersistM a -> IO a
 withDatabase action = do
   path <- getDbPath
-  SQLite.withConnection path action
+  runSqlite (pack path) action
 
--- | Create the pr_records, pr_history, and sync_meta tables if they don't exist.
-initDB :: Connection -> IO ()
-initDB conn = do
-  SQLite.execute_ conn
-    "CREATE TABLE IF NOT EXISTS pr_records (exercise TEXT PRIMARY KEY, weight_kg REAL NOT NULL)"
-  SQLite.execute_ conn
-    "CREATE TABLE IF NOT EXISTS pr_history (id INTEGER PRIMARY KEY AUTOINCREMENT, exercise TEXT NOT NULL, weight_kg REAL NOT NULL, recorded_at TEXT NOT NULL DEFAULT (datetime('now')))"
-  SQLite.execute_ conn
-    "CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+-- | Run database migrations.
+initDB :: SqlPersistM ()
+initDB = runMigration migrateAll
 
 -- | Load all PR records from the database.
-loadRecords :: Connection -> IO (Map Exercise Double)
-loadRecords conn = do
-  rows <- SQLite.query_ conn "SELECT exercise, weight_kg FROM pr_records"
+loadRecords :: SqlPersistM (Map Exercise Double)
+loadRecords = do
+  entities <- selectList [] []
   pure $ Map.fromList
-    [ (exercise, weight)
-    | (name, weight) <- rows
-    , Just exercise  <- [nameToExercise name]
+    [ (prRecordExercise (entityVal entity), prRecordWeightKg (entityVal entity))
+    | entity <- entities
     ]
 
 -- | Save a single PR record (upsert) and append to history.
-saveRecord :: Connection -> Exercise -> Double -> IO ()
-saveRecord conn exercise weight = do
-  let name = exerciseName exercise
-  SQLite.execute conn
-    "INSERT OR REPLACE INTO pr_records (exercise, weight_kg) VALUES (?, ?)"
-    (name, weight)
-  SQLite.execute conn
-    "INSERT INTO pr_history (exercise, weight_kg) VALUES (?, ?)"
-    (name, weight)
+saveRecord :: Exercise -> Double -> SqlPersistM ()
+saveRecord exercise weight = do
+  _ <- upsertBy (UniqueExercise exercise)
+    (PrRecord exercise weight)
+    [PrRecordWeightKg =. weight]
+  now <- liftIO getCurrentTime
+  insert_ $ PrHistory exercise weight now
 
 -- | Load all history entries for an exercise, newest first.
-loadExerciseHistory :: Connection -> Exercise -> IO [(Double, Text)]
-loadExerciseHistory conn exercise =
-  SQLite.query conn
-    "SELECT weight_kg, recorded_at FROM pr_history WHERE exercise = ? ORDER BY id DESC"
-    (SQLite.Only (exerciseName exercise))
-
--- | Parse an exercise name back to its constructor.
-nameToExercise :: Text -> Maybe Exercise
-nameToExercise t = case filter (\ex -> exerciseName ex == t) allExercises of
-  [ex] -> Just ex
-  _    -> Nothing
+loadExerciseHistory :: Exercise -> SqlPersistM [(Double, Text)]
+loadExerciseHistory exercise = do
+  entities <- selectList [PrHistoryExercise ==. exercise] [Desc PrHistoryId]
+  pure [ (prHistoryWeightKg (entityVal entity), pack (show (prHistoryRecordedAt (entityVal entity))))
+       | entity <- entities
+       ]
 
 -- | Read the last sync time from sync_meta, if any.
-getLastSyncTime :: Connection -> IO (Maybe UTCTime)
-getLastSyncTime conn = do
-  rows <- SQLite.query conn
-    "SELECT value FROM sync_meta WHERE key = ?"
-    (SQLite.Only ("last_sync_time" :: Text))
-  case rows of
-    [SQLite.Only val] -> pure (Just (read val))
-    _                 -> pure Nothing
+getLastSyncTime :: SqlPersistM (Maybe UTCTime)
+getLastSyncTime = do
+  result <- getBy (UniqueSyncKey "last_sync_time")
+  pure $ case result of
+    Just entity -> Just (read (unpack (syncMetaValue (entityVal entity))))
+    Nothing     -> Nothing
 
 -- | Write the last sync time to sync_meta.
-setLastSyncTime :: Connection -> UTCTime -> IO ()
-setLastSyncTime conn syncTimestamp =
-  SQLite.execute conn
-    "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)"
-    ("last_sync_time" :: Text, show syncTimestamp)
+setLastSyncTime :: UTCTime -> SqlPersistM ()
+setLastSyncTime syncTimestamp = do
+  _ <- upsertBy (UniqueSyncKey "last_sync_time")
+    (SyncMeta "last_sync_time" (pack (show syncTimestamp)))
+    [SyncMetaValue =. pack (show syncTimestamp)]
+  pure ()
 
 -- | Get all history entries recorded after the given time.
-getHistorySince :: Connection -> UTCTime -> IO [(Exercise, Double, UTCTime)]
-getHistorySince conn since = do
-  rows <- SQLite.query conn
-    "SELECT exercise, weight_kg, recorded_at FROM pr_history WHERE recorded_at > ? ORDER BY id ASC"
-    (SQLite.Only (show since))
-  pure [ (ex, weight, timestamp)
-       | (name, weight, timestampStr) <- rows
-       , Just ex <- [nameToExercise name]
-       , let timestamp = read timestampStr
+getHistorySince :: UTCTime -> SqlPersistM [(Exercise, Double, UTCTime)]
+getHistorySince since = do
+  entities <- selectList [PrHistoryRecordedAt >. since] [Asc PrHistoryId]
+  pure [ (prHistoryExercise (entityVal entity), prHistoryWeightKg (entityVal entity), prHistoryRecordedAt (entityVal entity))
+       | entity <- entities
        ]
 
 -- | Insert a PR record only if the weight is strictly higher than the existing one.
-mergeRecord :: Connection -> Exercise -> Double -> IO ()
-mergeRecord conn exercise weight = do
-  let name = exerciseName exercise
-  existing <- SQLite.query conn
-    "SELECT weight_kg FROM pr_records WHERE exercise = ?"
-    (SQLite.Only name)
+mergeRecord :: Exercise -> Double -> SqlPersistM ()
+mergeRecord exercise weight = do
+  existing <- getBy (UniqueExercise exercise)
   case existing of
-    [SQLite.Only currentWeight] | currentWeight >= weight -> pure ()
-    _ -> SQLite.execute conn
-           "INSERT OR REPLACE INTO pr_records (exercise, weight_kg) VALUES (?, ?)"
-           (name, weight)
+    Just entity | prRecordWeightKg (entityVal entity) >= weight -> pure ()
+    Just _  -> do
+      _ <- upsertBy (UniqueExercise exercise)
+        (PrRecord exercise weight)
+        [PrRecordWeightKg =. weight]
+      pure ()
+    Nothing -> do
+      _ <- upsertBy (UniqueExercise exercise)
+        (PrRecord exercise weight)
+        [PrRecordWeightKg =. weight]
+      pure ()
 
 -- | Insert a history entry if no duplicate exists (same exercise, weight, and timestamp).
-mergeHistoryEntry :: Connection -> Exercise -> Double -> UTCTime -> IO ()
-mergeHistoryEntry conn exercise weight timestamp = do
-  let name = exerciseName exercise
-      timestampStr = show timestamp
-  duplicates <- SQLite.query conn
-    "SELECT id FROM pr_history WHERE exercise = ? AND weight_kg = ? AND recorded_at = ?"
-    (name, weight, timestampStr)
-  case (duplicates :: [SQLite.Only Int]) of
-    [] -> SQLite.execute conn
-            "INSERT INTO pr_history (exercise, weight_kg, recorded_at) VALUES (?, ?, ?)"
-            (name, weight, timestampStr)
-    _  -> pure ()
+mergeHistoryEntry :: Exercise -> Double -> UTCTime -> SqlPersistM ()
+mergeHistoryEntry exercise weight timestamp = do
+  existing <- selectFirst
+    [ PrHistoryExercise ==. exercise
+    , PrHistoryWeightKg ==. weight
+    , PrHistoryRecordedAt ==. timestamp
+    ] []
+  case existing of
+    Just _  -> pure ()
+    Nothing -> insert_ $ PrHistory exercise weight timestamp
