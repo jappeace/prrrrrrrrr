@@ -95,7 +95,7 @@ exerciseListView actions st = do
   let categorySection cat =
         Styled centeredText (Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing })
           : map (exerciseButton actions records) (exercisesInCategory cat)
-      children = Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing }
+      children = Styled centeredText (Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing })
           : concatMap categorySection allCategories
   pure $ ScrollView [Column children]
 
@@ -115,8 +115,9 @@ enterPRView actions st ex = do
   history  <- readIORef (stHistory st)
   let historyWidgets = map historyEntry history
   pure $ Column
-    [ Text TextConfig { tcLabel = "Set PR: " <> exerciseName ex, tcFontConfig = Nothing }
-    , TextInput TextInputConfig
+    [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
+    , Styled centeredText $ Text TextConfig { tcLabel = exerciseName ex, tcFontConfig = Nothing }
+    , Styled centeredText $ TextInput TextInputConfig
         { tiInputType = InputNumber
         , tiHint      = "Weight (kg)"
         , tiValue     = inputVal
@@ -137,7 +138,7 @@ enterPRView actions st ex = do
 
 -- | Render a single history entry.
 historyEntry :: (Double, Text) -> Widget
-historyEntry (weight, timestamp) = Text TextConfig
+historyEntry (weight, timestamp) = Styled centeredText $ Text TextConfig
   { tcLabel = timestamp <> ": " <> formatWeight weight, tcFontConfig = Nothing }
 
 -- | Attempt to parse the input and save the PR, then reload history without navigating away.
