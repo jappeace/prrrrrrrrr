@@ -1,6 +1,5 @@
 packages:
   .
-  schema/
   haskell-mobile-src/
   pr-sync-api-src/
 
@@ -10,7 +9,4 @@ package haskell-mobile
 
 -- Only test our package, not pr-sync-api
 package pr-sync-api
-  tests: False
-
-package prrrrrrrrr-schema
   tests: False
