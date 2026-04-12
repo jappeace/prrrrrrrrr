@@ -34,6 +34,8 @@ data AppState = AppState
   , stNeedsSyncOnBoot :: IORef Bool
   , stPercentage      :: IORef Word
     -- ^ Percentage of 1RM to calculate (0 = disabled).
+  , stConfetti        :: IORef Bool
+    -- ^ Show confetti animation after saving a new PR.
   }
 
 -- | Create a fresh 'AppState' with the given initial records.
@@ -46,6 +48,7 @@ newAppState initialRecords = do
   httpState       <- newIORef Nothing
   needsSyncOnBoot <- newIORef True
   percentage      <- newIORef 0
+  confetti        <- newIORef False
   pure AppState
     { stScreen          = screen
     , stRecords         = records
@@ -54,4 +57,5 @@ newAppState initialRecords = do
     , stHttpState       = httpState
     , stNeedsSyncOnBoot = needsSyncOnBoot
     , stPercentage      = percentage
+    , stConfetti        = confetti
     }
