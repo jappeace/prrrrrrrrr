@@ -6,14 +6,20 @@ set -euo pipefail
 
 [ -z "${PRRRRRRRRR_API_KEY:-}" ] && echo "Set PRRRRRRRRR_API_KEY" && exit 1
 
+REPO_DIR="$(pwd)"
 sed -i '' "s/PRRRRRRRRR_API_KEY/$PRRRRRRRRR_API_KEY/" src/GymTracker/Config.hs
-trap 'git checkout src/GymTracker/Config.hs' EXIT
+trap 'cd "$REPO_DIR" && git checkout src/GymTracker/Config.hs' EXIT
 
 # Build iOS simulator library and stage Xcode project
 result=$(nix-build nix/ios-app.nix)
 
+# Copy nix output to a writable directory (nix store is read-only)
+workdir=$(mktemp -d)
+cp -r "$result/share/ios/." "$workdir/"
+chmod -R u+w "$workdir"
+
 # Generate Xcode project and build
-cd "$result/share/ios"
+cd "$workdir"
 xcodegen generate
 xcodebuild -scheme HaskellMobile -sdk iphonesimulator -configuration Debug build
 
