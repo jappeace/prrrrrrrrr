@@ -5,13 +5,13 @@
       "repository": {
         "type": "GitHub",
         "owner": "jappeace",
-        "repo": "haskell-mobile"
+        "repo": "hatter"
       },
       "branch": "master",
       "submodules": false,
-      "revision": "a54a31ad0b860c4d04d419c83616b4549dd1d9d1",
-      "url": "https://github.com/jappeace/haskell-mobile/archive/a54a31ad0b860c4d04d419c83616b4549dd1d9d1.tar.gz",
-      "hash": "sha256-RzWXiq2gQbWR6juheSzgjffzjZLsr23j5yo+khPEevE="
+      "revision": "690b99ccc5325f2f19c96eeb7eda6edffc7519d9",
+      "url": "https://github.com/jappeace/hatter/archive/690b99ccc5325f2f19c96eeb7eda6edffc7519d9.tar.gz",
+      "hash": "sha256-I1ypeoFvPqEC2iQjGO+annzZcJsTOLzMwEROo0kTaFI="
     },
     "nixpkgs": {
       "type": "Channel",

@@ -2,7 +2,9 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 -- | UI view builders for the gym PR tracker.
 module GymTracker.Views
-  ( exerciseListView
+  ( AppActions(..)
+  , createAppActions
+  , exerciseListView
   , enterPRView
   , appRootView
   )
@@ -25,7 +27,49 @@ import GymTracker.Model
   )
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
 import GymTracker.Sync (triggerSync)
+import HaskellMobile (Action, OnChange, ActionM, createAction, createOnChange)
 import HaskellMobile.Widget (ButtonConfig(..), InputType(..), TextConfig(..), TextInputConfig(..), Widget(..), WidgetStyle(..), defaultStyle)
+
+-- | Pre-created callback handles for all UI interactions.
+-- Created once at init time via 'createAppActions'.
+data AppActions = AppActions
+  { aaExerciseButtons :: Map Exercise Action
+    -- ^ Navigate to the EnterPR screen for each exercise.
+  , aaSaveButtons     :: Map Exercise Action
+    -- ^ Save the current PR for each exercise.
+  , aaBackButton      :: Action
+    -- ^ Navigate back to the exercise list.
+  , aaWeightInput     :: OnChange
+    -- ^ Text input change handler for weight entry.
+  }
+
+-- | Create all 'Action' / 'OnChange' handles for the app.
+-- Must be called inside 'runActionM'.
+createAppActions :: AppState -> ActionM AppActions
+createAppActions st = do
+  exerciseButtons <- fmap Map.fromList $ mapM mkExerciseAction allExercises
+  saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
+  back            <- createAction (writeIORef (stScreen st) ExerciseList)
+  weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
+  pure AppActions
+    { aaExerciseButtons = exerciseButtons
+    , aaSaveButtons     = saveButtons
+    , aaBackButton      = back
+    , aaWeightInput     = weightInput
+    }
+  where
+    mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
+    mkExerciseAction ex = do
+      action <- createAction $ do
+        history <- withDatabase $ \db -> loadExerciseHistory db ex
+        writeIORef (stHistory st) history
+        writeIORef (stScreen st) (EnterPR ex)
+        writeIORef (stInputText st) ""
+      pure (ex, action)
+    mkSaveAction :: Exercise -> ActionM (Exercise, Action)
+    mkSaveAction ex = do
+      action <- createAction (savePR st ex)
+      pure (ex, action)
 
 -- | Format a weight value for display.
 formatWeight :: Double -> Text
@@ -45,32 +89,28 @@ exercisesInCategory :: ExerciseCategory -> [Exercise]
 exercisesInCategory cat = filter (\ex -> exerciseCategory ex == cat) allExercises
 
 -- | Exercise list screen: shows exercises grouped by category inside a scroll view.
-exerciseListView :: AppState -> IO Widget
-exerciseListView st = do
+exerciseListView :: AppActions -> AppState -> IO Widget
+exerciseListView actions st = do
   records <- readIORef (stRecords st)
   let categorySection cat =
         Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing }
-          : map (exerciseButton st records) (exercisesInCategory cat)
+          : map (exerciseButton actions records) (exercisesInCategory cat)
       children = Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing }
           : concatMap categorySection allCategories
   pure $ ScrollView [Column children]
 
 -- | A single exercise button that navigates to the EnterPR screen and loads history.
-exerciseButton :: AppState -> Map Exercise Double -> Exercise -> Widget
-exerciseButton st records ex =
+exerciseButton :: AppActions -> Map Exercise Double -> Exercise -> Widget
+exerciseButton actions records ex =
   Button ButtonConfig
     { bcLabel = exerciseLabel records ex
-    , bcAction = do
-        history <- withDatabase $ \db -> loadExerciseHistory db ex
-        writeIORef (stHistory st) history
-        writeIORef (stScreen st) (EnterPR ex)
-        writeIORef (stInputText st) ""
+    , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaExerciseButtons actions)
     , bcFontConfig = Nothing
     }
 
 -- | Enter PR screen: text input for weight + save/back buttons + history log.
-enterPRView :: AppState -> Exercise -> IO Widget
-enterPRView st ex = do
+enterPRView :: AppActions -> AppState -> Exercise -> IO Widget
+enterPRView actions st ex = do
   inputVal <- readIORef (stInputText st)
   history  <- readIORef (stHistory st)
   let historyWidgets = map historyEntry history
@@ -80,14 +120,17 @@ enterPRView st ex = do
         { tiInputType = InputNumber
         , tiHint      = "Weight (kg)"
         , tiValue     = inputVal
-        , tiOnChange  = \t -> writeIORef (stInputText st) t
+        , tiOnChange  = aaWeightInput actions
         , tiFontConfig = Nothing
         }
     , Row
         [ Button ButtonConfig
-            { bcLabel = "Save", bcAction = savePR st ex, bcFontConfig = Nothing }
+            { bcLabel = "Save"
+            , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaSaveButtons actions)
+            , bcFontConfig = Nothing
+            }
         , Button ButtonConfig
-            { bcLabel = "Back", bcAction = writeIORef (stScreen st) ExerciseList, bcFontConfig = Nothing }
+            { bcLabel = "Back", bcAction = aaBackButton actions, bcFontConfig = Nothing }
         ]
     , Column historyWidgets
     ]
@@ -130,10 +173,10 @@ roundScreenPadding :: WidgetStyle
 roundScreenPadding = defaultStyle { wsPadding = Just 24 }
 
 -- | Root view: dispatches to the correct screen, padded for round displays.
-appRootView :: AppState -> IO Widget
-appRootView st = do
+appRootView :: AppActions -> AppState -> IO Widget
+appRootView actions st = do
   screen <- readIORef (stScreen st)
   inner <- case screen of
-    ExerciseList -> exerciseListView st
-    EnterPR ex   -> enterPRView st ex
+    ExerciseList -> exerciseListView actions st
+    EnterPR ex   -> enterPRView actions st ex
   pure $ Styled roundScreenPadding inner
