@@ -16,6 +16,7 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
+import System.Random (newStdGen, randomRs)
 import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
@@ -193,10 +194,10 @@ enterPRView actions st ex = do
             ]
         , Column historyWidgets
         ]
-  pure $ Column $
-    if showConfetti
-      then confettiOverlay : formWidgets
-      else formWidgets
+  confetti <- if showConfetti
+    then fmap (: []) confettiOverlay
+    else pure []
+  pure $ Column $ confetti ++ formWidgets
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
@@ -207,36 +208,49 @@ historyEntry (weight, timestamp, notes) =
         Nothing -> base
   in Styled centeredText $ Text TextConfig { tcLabel = label, tcFontConfig = Nothing }
 
--- | Confetti animation overlay — a row of animated colored particles.
+-- | Confetti animation overlay — scattered animated colored particles.
 -- Shown on the EnterPR screen after saving a new personal record.
-confettiOverlay :: Widget
-confettiOverlay =
-  Animated (AnimatedConfig 1200 EaseOut) $
-    Row
-      [ confettiParticle gold    (-30) (-5)
-      , confettiParticle red     (-12) 8
-      , confettiParticle green   10    (-3)
-      , confettiParticle blue    25    6
-      , confettiParticle magenta (-20) 12
-      , confettiParticle cyan    18    (-8)
-      , confettiParticle gold    5     10
-      , confettiParticle red     (-8)  (-12)
-      ]
+-- Uses random positions and colors so each celebration looks unique.
+confettiOverlay :: IO Widget
+confettiOverlay = do
+  gen <- newStdGen
+  let randoms = randomRs (0 :: Int, 999) gen
+      -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
+      triples = takeTriples particleCount randoms
+      particles = map mkParticle triples
+  pure $ Animated (AnimatedConfig 1200 EaseOut) $ Column particles
   where
-    confettiParticle :: Color -> Double -> Double -> Widget
-    confettiParticle color offsetX offsetY =
-      Styled (defaultStyle
+    particleCount :: Int
+    particleCount = 20
+
+    -- | Extract groups of three from a list.
+    takeTriples :: Int -> [Int] -> [(Int, Int, Int)]
+    takeTriples 0 _             = []
+    takeTriples _ []            = []
+    takeTriples _ [_]           = []
+    takeTriples _ [_, _]        = []
+    takeTriples n (a:b:c:rest)  = (a, b, c) : takeTriples (n - 1) rest
+
+    mkParticle :: (Int, Int, Int) -> Widget
+    mkParticle (xSeed, ySeed, colorSeed) =
+      let offsetX = fromIntegral (xSeed `mod` 301) - 150 :: Double  -- -150 to +150
+          offsetY = fromIntegral (ySeed `mod` 551) - 50  :: Double  -- -50 to +500
+          color   = palette !! (colorSeed `mod` length palette)
+      in Styled (defaultStyle
         { wsTextColor  = Just color
         , wsTranslateX = Just offsetX
         , wsTranslateY = Just offsetY
         }) (Text TextConfig { tcLabel = "*", tcFontConfig = Nothing })
-    gold, red, green, blue, magenta, cyan :: Color
-    gold    = Color 255 215 0   255
-    red     = Color 255 68  68  255
-    green   = Color 68  255 68  255
-    blue    = Color 68  68  255 255
-    magenta = Color 255 68  255 255
-    cyan    = Color 68  255 255 255
+
+    palette :: [Color]
+    palette =
+      [ Color 255 215 0   255  -- gold
+      , Color 255 68  68  255  -- red
+      , Color 68  255 68  255  -- green
+      , Color 68  68  255 255  -- blue
+      , Color 255 68  255 255  -- magenta
+      , Color 68  255 255 255  -- cyan
+      ]
 
 -- | Attempt to parse the input and save the PR, then reload history without navigating away.
 -- Invalid input (empty, non-numeric, non-positive) is silently ignored.

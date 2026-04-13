@@ -337,11 +337,12 @@ confettiTests = testGroup "Confetti"
         Column _ -> assertFailure "expected first child to be Animated"
         _        -> assertFailure "expected Column"
 
-  , testCase "confettiOverlay contains 8 particles in a Row" $
-      case confettiOverlay of
-        Animated _ (Row particles) -> length particles @?= 8
-        Animated _ _               -> assertFailure "expected Row inside Animated"
-        _                          -> assertFailure "expected Animated"
+  , testCase "confettiOverlay contains 20 particles in a Column" $ do
+      widget <- confettiOverlay
+      case widget of
+        Animated _ (Column particles) -> length particles @?= 20
+        Animated _ _                  -> assertFailure "expected Column inside Animated"
+        _                             -> assertFailure "expected Animated"
   ]
 
 -- | Replicate the parseWeight logic from Views for testing.
