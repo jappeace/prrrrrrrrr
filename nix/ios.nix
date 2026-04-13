@@ -9,14 +9,12 @@
 let
   hatterSrc = sources.haskell-mobile;
   prSyncApiSrc = sources.pr-sync-api;
-  schemaSrc = ../schema;
   lib = import "${hatterSrc}/nix/lib.nix" { inherit sources; };
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkIOSLib.
   consumerCabal2Nix =
-    { mkDerivation, base, containers, lib, persistent, persistent-sqlite, text
-    , prrrrrrrrr-schema
+    { mkDerivation, base, containers, lib, sqlite-simple, text
     , pr-sync-api
     , servant, servant-client-core
     , http-types, http-media, case-insensitive, mtl, bytestring, time
@@ -25,8 +23,7 @@ let
       pname = "prrrrrrrrr";
       version = "0.1.0.0";
       libraryHaskellDepends = [
-        base containers persistent persistent-sqlite text
-        prrrrrrrrr-schema
+        base containers sqlite-simple text
         pr-sync-api
         servant servant-client-core
         http-types http-media case-insensitive mtl bytestring time
@@ -36,8 +33,7 @@ let
 
   iosDeps = import "${hatterSrc}/nix/ios-deps.nix" {
     inherit sources consumerCabal2Nix;
-    hpkgs = self: super: {
-      prrrrrrrrr-schema = self.callCabal2nix "prrrrrrrrr-schema" schemaSrc {};
+    hpkgs = self: _super: {
       pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
     };
   };
@@ -52,6 +48,7 @@ lib.mkIOSLib {
     cp ${../src/Hatter/App.hs} Hatter/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
+    cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
     cp ${../src/GymTracker/ServantNative.hs} GymTracker/ServantNative.hs
     cp ${../src/GymTracker/Storage.hs} GymTracker/Storage.hs
     cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs

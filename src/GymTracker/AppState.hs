@@ -1,10 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Mutable application state and screen definitions.
---
--- Split from 'GymTracker.Model' because 'AppState' depends on
--- haskell-mobile's 'HttpState', which is only available during
--- the consumer build — not in cross-deps where the persistent
--- TH schema is compiled.
 module GymTracker.AppState
   ( Screen(..)
   , AppState(..)
