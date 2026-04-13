@@ -3,7 +3,6 @@
 module Main where
 
 import Control.Exception (toException)
-import Control.Monad.IO.Class (liftIO)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -12,7 +11,6 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Text (Text, unpack)
 import Data.Text.Encoding qualified as TE
 import Data.Time (addUTCTime, getCurrentTime)
-import Database.Persist (deleteWhere, insert_, selectList, (==.))
 import GymTracker.AppState (AppState(..), Screen(..), newAppState)
 import GymTracker.Model
   ( Exercise(..)
@@ -27,7 +25,8 @@ import GymTracker.Model
 import GymTracker.Storage
   ( withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory
   , getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry
-  , PrHistory(..), EntityField(..)
+  , deleteRecordsByExercise, deleteSyncMeta
+  , queryHistoryByExerciseAndTime, insertHistory
   )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
 import Hatter.Widget (AnimatedConfig(..), Easing(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
@@ -133,47 +132,47 @@ modelTests = testGroup "Model"
 storageTests :: TestTree
 storageTests = sequentialTestGroup "Storage" AllFinish
   [ testCase "saveRecord then loadRecords roundtrip" $ do
-      records <- withDatabase $ do
-        initDB
-        saveRecord Snatch 80.0 Nothing
-        saveRecord Deadlift 150.5 Nothing
-        loadRecords
+      records <- withDatabase $ \conn -> do
+        initDB conn
+        saveRecord conn Snatch 80.0 Nothing
+        saveRecord conn Deadlift 150.5 Nothing
+        loadRecords conn
       Map.lookup Snatch records @?= Just 80.0
       Map.lookup Deadlift records @?= Just 150.5
 
   , testCase "saveRecord overwrites previous value" $ do
-      records <- withDatabase $ do
-        initDB
-        saveRecord BackSquat 100.0 Nothing
-        saveRecord BackSquat 110.0 Nothing
-        loadRecords
+      records <- withDatabase $ \conn -> do
+        initDB conn
+        saveRecord conn BackSquat 100.0 Nothing
+        saveRecord conn BackSquat 110.0 Nothing
+        loadRecords conn
       Map.lookup BackSquat records @?= Just 110.0
 
   , testCase "loadExerciseHistory returns entry after saveRecord" $ do
-      history <- withDatabase $ do
-        initDB
-        saveRecord FrontSquat 90.0 Nothing
-        loadExerciseHistory FrontSquat
+      history <- withDatabase $ \conn -> do
+        initDB conn
+        saveRecord conn FrontSquat 90.0 Nothing
+        loadExerciseHistory conn FrontSquat
       case history of
         [] -> assertFailure "expected at least one history entry"
         ((weight, _timestamp, _notes) : _) -> weight @?= 90.0
 
   , testCase "multiple saveRecord calls accumulate in history newest first" $ do
-      weights <- withDatabase $ do
-        initDB
-        saveRecord PushPress 60.0 Nothing
-        saveRecord PushPress 65.0 Nothing
-        saveRecord PushPress 70.0 Nothing
-        history <- loadExerciseHistory PushPress
+      weights <- withDatabase $ \conn -> do
+        initDB conn
+        saveRecord conn PushPress 60.0 Nothing
+        saveRecord conn PushPress 65.0 Nothing
+        saveRecord conn PushPress 70.0 Nothing
+        history <- loadExerciseHistory conn PushPress
         pure (map (\(w, _, _) -> w) history)
       -- newest first: 70, 65, 60 (plus any from prior test runs)
       take 3 weights @?= [70.0, 65.0, 60.0]
 
   , testCase "saveRecord with notes roundtrips through loadExerciseHistory" $ do
-      history <- withDatabase $ do
-        initDB
-        saveRecord CleanAndJerk 95.0 (Just "belt used")
-        loadExerciseHistory CleanAndJerk
+      history <- withDatabase $ \conn -> do
+        initDB conn
+        saveRecord conn CleanAndJerk 95.0 (Just "belt used")
+        loadExerciseHistory conn CleanAndJerk
       case history of
         [] -> assertFailure "expected at least one history entry"
         ((weight, _timestamp, notes) : _) -> do
@@ -386,72 +385,62 @@ syncPureTests = testGroup "Sync pure"
 syncDbTests :: TestTree
 syncDbTests = sequentialTestGroup "Sync DB" AllFinish
   [ testCase "mergeRecord inserts when no existing record" $ do
-      records <- withDatabase $ do
-        initDB
+      records <- withDatabase $ \conn -> do
+        initDB conn
         -- Clear any prior test data
-        deleteWhere [PrRecordExercise ==. Clean]
-        mergeRecord Clean 85.0
-        loadRecords
+        deleteRecordsByExercise conn Clean
+        mergeRecord conn Clean 85.0
+        loadRecords conn
       Map.lookup Clean records @?= Just 85.0
 
   , testCase "mergeRecord updates only if weight is strictly higher" $ do
-      (records1, records2, records3) <- withDatabase $ do
-        initDB
-        deleteWhere [PrRecordExercise ==. PowerSnatch]
-        mergeRecord PowerSnatch 60.0
-        mergeRecord PowerSnatch 55.0  -- lower, should not update
-        r1 <- loadRecords
-        mergeRecord PowerSnatch 60.0  -- equal, should not update
-        r2 <- loadRecords
-        mergeRecord PowerSnatch 65.0  -- higher, should update
-        r3 <- loadRecords
+      (records1, records2, records3) <- withDatabase $ \conn -> do
+        initDB conn
+        deleteRecordsByExercise conn PowerSnatch
+        mergeRecord conn PowerSnatch 60.0
+        mergeRecord conn PowerSnatch 55.0  -- lower, should not update
+        r1 <- loadRecords conn
+        mergeRecord conn PowerSnatch 60.0  -- equal, should not update
+        r2 <- loadRecords conn
+        mergeRecord conn PowerSnatch 65.0  -- higher, should update
+        r3 <- loadRecords conn
         pure (r1, r2, r3)
       Map.lookup PowerSnatch records1 @?= Just 60.0
       Map.lookup PowerSnatch records2 @?= Just 60.0
       Map.lookup PowerSnatch records3 @?= Just 65.0
 
   , testCase "mergeHistoryEntry deduplicates identical entries" $ do
-      duplicateCount <- withDatabase $ do
-        initDB
-        now <- liftIO getCurrentTime
-        mergeHistoryEntry Snatch 80.0 now Nothing
-        mergeHistoryEntry Snatch 80.0 now Nothing  -- duplicate
-        matches <- selectList
-          [ PrHistoryExercise ==. Snatch
-          , PrHistoryWeightKg ==. 80.0
-          , PrHistoryRecordedAt ==. now
-          ] []
+      duplicateCount <- withDatabase $ \conn -> do
+        initDB conn
+        now <- getCurrentTime
+        mergeHistoryEntry conn Snatch 80.0 now Nothing
+        mergeHistoryEntry conn Snatch 80.0 now Nothing  -- duplicate
+        matches <- queryHistoryByExerciseAndTime conn Snatch 80.0 now
         pure (length matches)
       duplicateCount @?= 1
 
   , testCase "mergeHistoryEntry inserts distinct entries" $ do
-      matchCount <- withDatabase $ do
-        initDB
-        now <- liftIO getCurrentTime
+      matchCount <- withDatabase $ \conn -> do
+        initDB conn
+        now <- getCurrentTime
         let later = addUTCTime 60 now
-        mergeHistoryEntry Snatch 80.0 now Nothing
-        mergeHistoryEntry Snatch 85.0 later Nothing  -- different timestamp and weight
-        nowMatches <- selectList
-          [ PrHistoryExercise ==. Snatch
-          , PrHistoryRecordedAt ==. now
-          ] []
-        laterMatches <- selectList
-          [ PrHistoryExercise ==. Snatch
-          , PrHistoryRecordedAt ==. later
-          ] []
+        mergeHistoryEntry conn Snatch 80.0 now Nothing
+        mergeHistoryEntry conn Snatch 85.0 later Nothing  -- different timestamp and weight
+        nowMatches <- queryHistoryByExerciseAndTime conn Snatch 80.0 now
+        laterMatches <- queryHistoryByExerciseAndTime conn Snatch 85.0 later
         pure (length nowMatches + length laterMatches)
       matchCount @?= 2
 
   , testCase "getHistorySince returns only entries after given time" $ do
-      ohsEntries <- withDatabase $ do
-        initDB
-        now <- liftIO getCurrentTime
+      ohsEntries <- withDatabase $ \conn -> do
+        initDB conn
+        now <- getCurrentTime
         let past = addUTCTime (-120) now
             middle = addUTCTime (-60) now
         -- Insert entries at specific times
-        insert_ $ PrHistory OverheadSquat 70.0 past Nothing
-        insert_ $ PrHistory OverheadSquat 75.0 now Nothing
-        entries <- getHistorySince middle
+        insertHistory conn OverheadSquat 70.0 past Nothing
+        insertHistory conn OverheadSquat 75.0 now Nothing
+        entries <- getHistorySince conn middle
         pure $ filter (\(ex, _, _, _) -> ex == OverheadSquat) entries
       -- Only the entry at 'now' should be returned (past < middle, now > middle)
       length ohsEntries @?= 1
@@ -460,13 +449,13 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
         _                   -> assertFailure "expected exactly one OHS entry"
 
   , testCase "sync_meta roundtrip for last sync time" $ do
-      (noSync, retrieved, now) <- withDatabase $ do
-        initDB
-        deleteWhere [SyncMetaKey ==. "last_sync_time"]
-        noSync <- getLastSyncTime
-        now <- liftIO getCurrentTime
-        setLastSyncTime now
-        retrieved <- getLastSyncTime
+      (noSync, retrieved, now) <- withDatabase $ \conn -> do
+        initDB conn
+        deleteSyncMeta conn "last_sync_time"
+        noSync <- getLastSyncTime conn
+        now <- getCurrentTime
+        setLastSyncTime conn now
+        retrieved <- getLastSyncTime conn
         pure (noSync, retrieved, now)
       noSync @?= Nothing
       retrieved @?= Just now

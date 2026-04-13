@@ -13,8 +13,7 @@ pkgs.mkShell {
       ps.containers
       ps.tasty
       ps.tasty-hunit
-      ps.persistent
-      ps.persistent-sqlite
+      ps.sqlite-simple
       ps.toml-parser
       ps.servant
       ps.servant-client-core
