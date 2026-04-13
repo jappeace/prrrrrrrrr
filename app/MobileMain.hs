@@ -7,7 +7,8 @@
 module Main where
 
 import Foreign.Ptr (Ptr)
-import Hatter (startMobileApp, platformLog, AppContext)
+import Hatter (startMobileApp, platformLog)
+import Hatter.AppContext (AppContext)
 import Hatter.App (mobileApp)
 
 main :: IO (Ptr AppContext)
