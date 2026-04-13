@@ -42,13 +42,8 @@ if [ "$TARGET" = "simulator" ]; then
   xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Hatter.app
   xcrun simctl launch booted me.jappie.hatter
 else
-  xcodebuild -scheme Hatter \
-      -destination 'generic/platform=iOS' \
-      -configuration Debug \
-      -allowProvisioningUpdates \
-      ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
   echo ""
-  echo "Build succeeded. To install on your device:"
-  echo "  open $workdir/Hatter.xcodeproj"
-  echo "Then select your device in Xcode and press Run."
+  echo "Xcode project staged at: $workdir/Hatter.xcodeproj"
+  echo "Opening in Xcode — select your device, configure signing, and press Run."
+  open "$workdir/Hatter.xcodeproj"
 fi
