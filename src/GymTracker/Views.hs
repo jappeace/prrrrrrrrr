@@ -85,7 +85,7 @@ createAppActions st = do
     mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
     mkExerciseAction ex = do
       action <- createAction $ do
-        history <- withDatabase $ loadExerciseHistory ex
+        history <- withDatabase $ \conn -> loadExerciseHistory conn ex
         writeIORef (stHistory st) history
         writeIORef (stConfetti st) False
         writeIORef (stScreen st) (EnterPR ex)
@@ -247,9 +247,9 @@ savePR st ex = do
   let notes = if notesRaw == "" then Nothing else Just notesRaw
   case parseWeight input of
     Just w  -> do
-      withDatabase $ saveRecord ex w notes
+      withDatabase $ \conn -> saveRecord conn ex w notes
       modifyRecords st (Map.insert ex w)
-      history <- withDatabase $ loadExerciseHistory ex
+      history <- withDatabase $ \conn -> loadExerciseHistory conn ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
       writeIORef (stNotesInput st) ""

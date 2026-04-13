@@ -1,8 +1,6 @@
 # Android shared library — uses haskell-mobile's lib.nix.
 #
-# TH cross-compilation support (static iserv-proxy, native libdl,
-# mmap wrapper, QEMU overlay, package DB patching) is provided by
-# haskell-mobile's cross-deps.nix — no consumer-side setup needed.
+# No TH cross-compilation needed — sqlite-simple has no Template Haskell.
 { sources ? import ../npins
 , androidArch ? "aarch64"
 , mainModule ? ../app/MobileMain.hs
@@ -15,13 +13,8 @@ let
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkAndroidLib.
-  # Schema package — built as a cross-dep so its Template Haskell
-  # runs with iserv-proxy / -fexternal-interpreter.
-  schemaSrc = ../schema;
-
   consumerCabal2Nix =
-    { mkDerivation, base, containers, lib, persistent, persistent-sqlite, text
-    , prrrrrrrrr-schema
+    { mkDerivation, base, containers, lib, sqlite-simple, text
     , pr-sync-api
     , servant, servant-client-core
     , http-types, http-media, case-insensitive, mtl, bytestring, time
@@ -30,8 +23,7 @@ let
       pname = "prrrrrrrrr";
       version = "0.1.0.0";
       libraryHaskellDepends = [
-        base containers persistent persistent-sqlite text
-        prrrrrrrrr-schema
+        base containers sqlite-simple text
         pr-sync-api
         servant servant-client-core
         http-types http-media case-insensitive mtl bytestring time
@@ -41,33 +33,8 @@ let
 
   crossDeps = import "${hatterSrc}/nix/cross-deps.nix" {
     inherit sources androidArch consumerCabal2Nix;
-    hpkgs = self: super: {
-      prrrrrrrrr-schema = self.callCabal2nix "prrrrrrrrr-schema" schemaSrc {};
+    hpkgs = self: _super: {
       pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
-      # nixpkgs enables -fsystemlib which links against the system sqlite C
-      # library.  That pulls in tcl → tzdata which fails to cross-compile for
-      # Android.  Disable it so persistent-sqlite uses its bundled amalgamation.
-      #
-      # The bundled path has extra-libraries: pthread, but Android's bionic
-      # has no separate libpthread (it's built into libc).  We create a stub
-      # archive so the cabal configure check passes; actual pthread symbols
-      # are resolved from libc at link time.
-      persistent-sqlite =
-        let
-          # Empty archive — the configure check only verifies the file
-          # exists.  Actual pthread symbols come from bionic's libc.
-          stubPthread = pkgs.runCommand "stub-libpthread" {} ''
-            mkdir -p $out/lib
-            ${pkgs.binutils}/bin/ar crs $out/lib/libpthread.a
-          '';
-          withoutFlag = pkgs.haskell.lib.compose.disableCabalFlag "systemlib" super.persistent-sqlite;
-          withoutSqlite = withoutFlag.overrideAttrs (old: {
-            buildInputs = builtins.filter
-              (d: builtins.match "sqlite-.*" (d.name or "") == null)
-              (old.buildInputs or []);
-          });
-        in pkgs.haskell.lib.compose.appendConfigureFlags
-          [ "--extra-lib-dirs=${stubPthread}/lib" ] withoutSqlite;
     };
   };
 
@@ -87,6 +54,7 @@ lib.mkAndroidLib {
     cp ${../src/Hatter/App.hs} Hatter/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
+    cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
     cp ${../src/GymTracker/ServantNative.hs} GymTracker/ServantNative.hs
     cp ${../src/GymTracker/Storage.hs} GymTracker/Storage.hs
     cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs
