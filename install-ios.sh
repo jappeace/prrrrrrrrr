@@ -42,8 +42,28 @@ if [ "$TARGET" = "simulator" ]; then
   xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Hatter.app
   xcrun simctl launch booted me.jappie.hatter
 else
-  echo ""
-  echo "Xcode project staged at: $workdir/Hatter.xcodeproj"
-  echo "Opening in Xcode — select your device, configure signing, and press Run."
-  open "$workdir/Hatter.xcodeproj"
+  # Auto-discover Apple Development team ID from keychain
+  TEAM_ID=$(security find-identity -v -p codesigning \
+    | grep "Apple Development" \
+    | head -1 \
+    | sed 's/.*(\(.*\)).*/\1/')
+  [ -z "$TEAM_ID" ] && echo "No Apple Development signing identity found in keychain" && exit 1
+  echo "Using team ID: $TEAM_ID"
+
+  xcodebuild -scheme Hatter \
+      -destination 'generic/platform=iOS' \
+      -configuration Debug \
+      -allowProvisioningUpdates \
+      ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+      DEVELOPMENT_TEAM="$TEAM_ID" \
+      CODE_SIGN_STYLE=Automatic
+
+  # Install on connected device
+  APP_PATH=$(ls -d "$workdir"/build/Build/Products/Debug-iphoneos/Hatter.app 2>/dev/null \
+    || ls -d DerivedData/Build/Products/Debug-iphoneos/Hatter.app 2>/dev/null)
+  if [ -n "$APP_PATH" ]; then
+    ios-deploy --bundle "$APP_PATH" || echo "ios-deploy not found — open Xcode to install: open $workdir/Hatter.xcodeproj"
+  else
+    echo "Build succeeded. Open Xcode to deploy: open $workdir/Hatter.xcodeproj"
+  fi
 fi
