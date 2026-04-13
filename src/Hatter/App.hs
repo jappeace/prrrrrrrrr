@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | App registration for the gym PR tracker.
-module HaskellMobile.App (mobileApp) where
+module Hatter.App (mobileApp) where
 
 import Data.IORef (readIORef, writeIORef)
 import Data.Text (pack)
@@ -8,9 +8,9 @@ import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
 import GymTracker.Views (AppActions, appRootView, createAppActions)
-import HaskellMobile (ActionState, newActionState, runActionM)
-import HaskellMobile.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
-import HaskellMobile.Types (MobileApp(..), UserState(..))
+import Hatter (ActionState, newActionState, runActionM)
+import Hatter.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
+import Hatter.Types (MobileApp(..), UserState(..))
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | The gym PR tracker mobile app.

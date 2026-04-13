@@ -4,7 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Servant client backend using native HTTP bindings from haskell-mobile.
 --
--- Routes servant requests through 'HaskellMobile.Http.performRequest'
+-- Routes servant requests through 'Hatter.Http.performRequest'
 -- instead of @http-client@\/@http-client-tls@, avoiding ~90 MB of
 -- TLS/crypto dependencies in the Android .so.
 module GymTracker.ServantNative
@@ -35,7 +35,7 @@ import Data.Sequence qualified as Seq
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
-import HaskellMobile.Http
+import Hatter.Http
   ( HttpMethod(..)
   , HttpRequest(..)
   , HttpResponse(..)

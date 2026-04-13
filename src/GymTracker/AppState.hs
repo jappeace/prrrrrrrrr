@@ -16,7 +16,7 @@ import Data.IORef (IORef, newIORef)
 import Data.Map.Strict (Map)
 import Data.Text (Text)
 import GymTracker.Model (Exercise)
-import HaskellMobile.Http (HttpState)
+import Hatter.Http (HttpState)
 
 -- | Application screens.
 data Screen
