@@ -193,7 +193,7 @@ enterPRView actions st ex = do
             ]
         , Column historyWidgets
         ]
-  pure $ Column $
+  pure $ ScrollView $
     if showConfetti
       then confettiOverlay : formWidgets
       else formWidgets
