@@ -9,9 +9,9 @@
 }:
 let
   pkgs = import sources.nixpkgs {};
-  haskellMobileSrc = sources.haskell-mobile;
+  hatterSrc = sources.haskell-mobile;
   prSyncApiSrc = sources.pr-sync-api;
-  lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources androidArch; };
+  lib = import "${hatterSrc}/nix/lib.nix" { inherit sources androidArch; };
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkAndroidLib.
@@ -39,7 +39,7 @@ let
       license = lib.licenses.mit;
     };
 
-  crossDeps = import "${haskellMobileSrc}/nix/cross-deps.nix" {
+  crossDeps = import "${hatterSrc}/nix/cross-deps.nix" {
     inherit sources androidArch consumerCabal2Nix;
     hpkgs = self: super: {
       prrrrrrrrr-schema = self.callCabal2nix "prrrrrrrrr-schema" schemaSrc {};
@@ -73,7 +73,7 @@ let
 
 in
 lib.mkAndroidLib {
-  inherit haskellMobileSrc mainModule crossDeps;
+  inherit hatterSrc mainModule crossDeps;
   pname = "prrrrrrrrr-android";
   soName = "libhaskellmobile.so";
   javaPackageName = "me.jappie.prrrrrrrrr";
@@ -83,8 +83,8 @@ lib.mkAndroidLib {
       -o storage_helper.o ${../cbits/storage_helper.c}
   '';
   extraModuleCopy = ''
-    mkdir -p GymTracker
-    cp ${../src/HaskellMobile/App.hs} HaskellMobile/App.hs
+    mkdir -p GymTracker Hatter
+    cp ${../src/Hatter/App.hs} Hatter/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
     cp ${../src/GymTracker/ServantNative.hs} GymTracker/ServantNative.hs

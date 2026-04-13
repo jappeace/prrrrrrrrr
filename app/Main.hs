@@ -1,8 +1,8 @@
 module Main where
 
-import HaskellMobile (platformLog, startMobileApp, AppContext(..), derefAppContext)
-import HaskellMobile.Lifecycle (LifecycleEvent(..), MobileContext(onLifecycle))
-import HaskellMobile.App (mobileApp)
+import Hatter (platformLog, startMobileApp, AppContext(..), derefAppContext)
+import Hatter.Lifecycle (LifecycleEvent(..), MobileContext(onLifecycle))
+import Hatter.App (mobileApp)
 
 -- | Desktop entry point: registers the app, simulates lifecycle.
 main :: IO ()

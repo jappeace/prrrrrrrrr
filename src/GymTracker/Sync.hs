@@ -37,8 +37,8 @@ import GymTracker.Storage
   , mergeRecord
   , mergeHistoryEntry
   )
-import HaskellMobile.Http (HttpState)
-import HaskellMobile.Lifecycle (platformLog)
+import Hatter.Http (HttpState)
+import Hatter.Lifecycle (platformLog)
 import PrSyncApi
   ( ServerApi
   , CurrentRecord(..)
