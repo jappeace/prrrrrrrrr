@@ -34,6 +34,7 @@ jobs:
       run: nix-build nix/emulator-ui.nix -o result-emulator-ui
     - name: Run UI test
       run: |
+        set -o pipefail
         # run_with_retry: up to 10 attempts, succeed on first pass,
         # fail only if all 10 fail.  If output contains "FATAL:" we
         # stop immediately (e.g. native library failed to load).
