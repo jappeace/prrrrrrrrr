@@ -299,16 +299,33 @@ while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
 done
 
 if [ $RENDER_DONE -eq 0 ]; then
-    echo "WARNING: setRoot not found in logcat after ''${POLL_TIMEOUT}s"
-    echo "=== Early logcat diagnostic ==="
-    echo "--- Crash / library-load messages ---"
-    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|CRASH|SIGNAL|System.err" \
-      "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
-    echo "--- All UIBridge messages ---"
+    echo ""
+    echo "============================================================"
+    echo "FATAL: No initial render after ''${POLL_TIMEOUT}s — app failed to start"
+    echo "============================================================"
+    echo ""
+
+    # Extract the actual crash reason from logcat
+    CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error" \
+      "$LOGCAT_FILE" 2>/dev/null | head -10) || true
+    if [ -n "$CRASH_LINES" ]; then
+        echo "--- Crash reason ---"
+        echo "$CRASH_LINES"
+    else
+        echo "--- No obvious crash in logcat; full diagnostic below ---"
+    fi
+
+    echo ""
+    echo "--- All crash / library-load messages ---"
+    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
+      "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+    echo "--- All UIBridge / JNI messages ---"
     grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
-    echo "--- Last 30 logcat lines ---"
-    tail -30 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
-    echo "=== End early logcat diagnostic ==="
+    echo "--- Last 40 logcat lines ---"
+    tail -40 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
+    echo "============================================================"
+
+    exit 1
 fi
 
 # Extra settle time for the view hierarchy to stabilize
@@ -566,7 +583,7 @@ echo "--- End filtered logcat ---"
 if [ $EXIT_CODE -ne 0 ]; then
     echo ""
     echo "=== Crash / library-load messages ==="
-    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|System\.load|loadLibrary|haskellmobile|CRASH|SIGNAL" \
+    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|System\.load|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL" \
       "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
     echo "--- End crash messages ---"
     echo ""
