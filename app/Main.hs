@@ -1,6 +1,7 @@
 module Main where
 
-import Hatter (platformLog, startMobileApp, AppContext(..), derefAppContext)
+import Hatter (platformLog, startMobileApp)
+import Hatter.AppContext (AppContext(..), derefAppContext)
 import Hatter.Lifecycle (LifecycleEvent(..), MobileContext(onLifecycle))
 import Hatter.App (mobileApp)
 
