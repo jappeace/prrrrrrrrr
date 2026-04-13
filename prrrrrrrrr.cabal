@@ -58,8 +58,6 @@ library
       HaskellMobile.App
       GymTracker.AppState
       GymTracker.Config
-      GymTracker.Model
-      GymTracker.Schema
       GymTracker.Storage
       GymTracker.Sync
       GymTracker.Views
@@ -74,6 +72,7 @@ library
       src
   build-depends:
       haskell-mobile,
+      prrrrrrrrr-schema,
       pr-sync-api,
       text,
       containers,
@@ -112,6 +111,7 @@ test-suite unit
       tasty,
       tasty-hunit,
       prrrrrrrrr,
+      prrrrrrrrr-schema,
       text,
       containers,
       persistent,

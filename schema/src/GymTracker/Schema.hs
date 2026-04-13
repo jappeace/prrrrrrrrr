@@ -14,6 +14,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Persistent schema for the gym PR tracker.
+--
+-- This module is in the schema package so that the Template Haskell
+-- splice runs during the cross-deps build (which has iserv-proxy /
+-- -fexternal-interpreter support), rather than during the consumer
+-- build (which does not).
 module GymTracker.Schema
   ( PrRecord(..)
   , PrHistory(..)
