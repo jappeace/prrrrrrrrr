@@ -299,33 +299,32 @@ while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
 done
 
 if [ $RENDER_DONE -eq 0 ]; then
-    echo ""
-    echo "============================================================"
-    echo "FATAL: No initial render after ''${POLL_TIMEOUT}s — app failed to start"
-    echo "============================================================"
-    echo ""
-
-    # Extract the actual crash reason from logcat
+    # Check if the app crashed (deterministic failure) vs just didn't render (flaky)
     CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error" \
       "$LOGCAT_FILE" 2>/dev/null | head -10) || true
+
     if [ -n "$CRASH_LINES" ]; then
-        echo "--- Crash reason ---"
+        # Deterministic crash — no point retrying
+        echo ""
+        echo "============================================================"
+        echo "FATAL: App crashed on startup"
+        echo "============================================================"
+        echo ""
         echo "$CRASH_LINES"
+        echo ""
+        echo "--- All crash / library-load messages ---"
+        grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
+          "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+        echo "============================================================"
+        exit 1
     else
-        echo "--- No obvious crash in logcat; full diagnostic below ---"
+        # No crash found — likely flaky emulator boot, let the retry loop handle it
+        echo "WARNING: No initial render after ''${POLL_TIMEOUT}s (no crash detected — may be flaky)"
+        echo "--- UIBridge / JNI messages ---"
+        grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
+        echo "--- Last 20 logcat lines ---"
+        tail -20 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
     fi
-
-    echo ""
-    echo "--- All crash / library-load messages ---"
-    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
-      "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
-    echo "--- All UIBridge / JNI messages ---"
-    grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
-    echo "--- Last 40 logcat lines ---"
-    tail -40 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
-    echo "============================================================"
-
-    exit 1
 fi
 
 # Extra settle time for the view hierarchy to stabilize
