@@ -412,17 +412,27 @@ run_test_flow() {
         EXIT_CODE=1
     fi
 
-    if grep -q 'setStrProp.*Set PR: Snatch' "$LOGCAT_FILE" 2>/dev/null; then
-        echo "PASS: EnterPR — 'Set PR: Snatch' in logcat"
+    # Note: "Set PR: " and exercise name are separate Text nodes in the view,
+    # so they appear as separate setStrProp calls.  Check for each individually.
+    if grep -q 'setStrProp.*Set PR:' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: EnterPR — 'Set PR:' in logcat"
     else
-        echo "FAIL: EnterPR — 'Set PR: Snatch' in logcat"
+        echo "FAIL: EnterPR — 'Set PR:' in logcat"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'setStrProp.*Snatch' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: EnterPR — exercise name 'Snatch' in logcat"
+    else
+        echo "FAIL: EnterPR — exercise name 'Snatch' in logcat"
         EXIT_CODE=1
     fi
 
     # Retry UI dump until EnterPR screen is visible (up to 30s)
+    # "Set PR:" and exercise name are separate text nodes, so check for "Set PR:" only.
     local ENTER_PR_VISIBLE=0
     for UI_WAIT in $(seq 1 6); do
-        if dump_ui "$UI_DUMP" && grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
+        if dump_ui "$UI_DUMP" && grep -q 'Set PR:' "$UI_DUMP" 2>/dev/null; then
             ENTER_PR_VISIBLE=1
             break
         fi
@@ -431,7 +441,7 @@ run_test_flow() {
     done
 
     if [ $ENTER_PR_VISIBLE -eq 1 ]; then
-        echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
+        echo "PASS: UI hierarchy — 'Set PR:' visible"
 
         if grep -q 'Save' "$UI_DUMP" 2>/dev/null; then
             echo "PASS: UI hierarchy — 'Save' button visible"
@@ -447,7 +457,7 @@ run_test_flow() {
             EXIT_CODE=1
         fi
     else
-        echo "FAIL: UI hierarchy — 'Set PR: Snatch' not visible after retries"
+        echo "FAIL: UI hierarchy — 'Set PR:' not visible after retries"
         EXIT_CODE=1
     fi
 
