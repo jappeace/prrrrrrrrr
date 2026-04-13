@@ -4,6 +4,10 @@
 --
 -- Uses persistent + persistent-sqlite for type-safe database access.
 -- The database is stored at @get_app_files_dir() ++ "/prrrrrrrrr.db"@.
+--
+-- The persistent schema definitions (Template Haskell) live in
+-- 'GymTracker.Schema' in the @prrrrrrrrr-schema@ package so that
+-- TH runs during the cross-deps build (which has iserv-proxy).
 module GymTracker.Storage
   ( withDatabase
   , initDB
