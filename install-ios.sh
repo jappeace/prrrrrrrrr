@@ -21,7 +21,8 @@ chmod -R u+w "$workdir"
 # Generate Xcode project and build
 cd "$workdir"
 xcodegen generate
-xcodebuild -scheme Hatter -sdk iphonesimulator -configuration Debug build
+xcodebuild -scheme Hatter -sdk iphonesimulator -configuration Debug build \
+    ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
 
 # Install on booted simulator
 xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Hatter.app
