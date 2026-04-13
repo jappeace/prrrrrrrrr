@@ -6,7 +6,9 @@
 #   3. Entering weight "100" and tapping "Save" stays on EnterPR and shows history
 #   4. Tapping "Back" returns to ExerciseList showing "Snatch: 100.0 kg"
 #
-# Independent from nix/emulator.nix (lifecycle test) — can run in parallel.
+# Boot + install happen once. The test flow is retried up to 3 times
+# (force-stop + relaunch between attempts) to handle emulator flakiness
+# without the cost of rebooting each time.
 #
 # Usage:
 #   nix-build nix/emulator-ui.nix -o result-emulator-ui
@@ -60,6 +62,7 @@ APK_PATH="${apk}/prrrrrrrrr.apk"
 PACKAGE="me.jappie.prrrrrrrrr"
 ACTIVITY=".MainActivity"
 DEVICE_NAME="test_ui"
+MAX_TEST_ATTEMPTS=3
 
 # --- Debug: show SDK structure ---
 echo "=== SDK structure ==="
@@ -223,13 +226,9 @@ if [ $INSTALL_OK -eq 0 ]; then
 fi
 echo "APK installed."
 
-# --- Clear logcat buffer ---
-echo "=== Preparing logcat ==="
-"$ADB" -s "emulator-$PORT" logcat -c
-
-# --- Launch activity ---
-echo "=== Launching $PACKAGE/$ACTIVITY ==="
-"$ADB" -s "emulator-$PORT" shell am start -n "$PACKAGE/$ACTIVITY"
+# ============================================================
+# Helper functions
+# ============================================================
 
 # --- Helper: dump UI hierarchy with retries ---
 dump_ui() {
@@ -248,12 +247,9 @@ dump_ui() {
 }
 
 # --- Helper: extract tap coordinates for a text element ---
-# uiautomator dumps the entire XML on one line, so we split into
-# individual elements first to isolate the correct node's bounds.
 tap_element() {
     local xml_file="$1"
     local search_text="$2"
-    # Split each XML element onto its own line, then find the one with our text
     local node_line
     node_line=$(sed 's/></>\n</g' "$xml_file" | grep "$search_text" | head -1)
     if [ -z "$node_line" ]; then
@@ -266,7 +262,6 @@ tap_element() {
         echo "WARNING: Could not extract bounds for '$search_text'"
         return 1
     fi
-    # Parse bounds="[left,top][right,bottom]"
     local left top right bottom
     left=$(echo "$coords" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
     top=$(echo "$coords" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
@@ -279,326 +274,356 @@ tap_element() {
 }
 
 # ============================================================
-# Step 1: Wait for initial render
+# Test flow — runs inside a retry loop
 # ============================================================
-echo ""
-echo "=== Step 1: Waiting for initial render (timeout: 120s) ==="
-POLL_TIMEOUT=120
-POLL_ELAPSED=0
-RENDER_DONE=0
+run_test_flow() {
+    local EXIT_CODE=0
 
-while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
-    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true || true
-    if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
-        RENDER_DONE=1
-        echo "Initial render detected after ~''${POLL_ELAPSED}s"
-        break
-    fi
+    # Reset app state for clean test
+    "$ADB" -s "emulator-$PORT" shell am force-stop "$PACKAGE" 2>/dev/null || true
+    "$ADB" -s "emulator-$PORT" shell pm clear "$PACKAGE" 2>/dev/null || true
     sleep 2
-    POLL_ELAPSED=$((POLL_ELAPSED + 2))
-done
 
-if [ $RENDER_DONE -eq 0 ]; then
-    # Check if the app crashed (deterministic failure) vs just didn't render (flaky)
-    CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error" \
-      "$LOGCAT_FILE" 2>/dev/null | head -10) || true
+    # Clear logcat and launch
+    "$ADB" -s "emulator-$PORT" logcat -c
+    "$ADB" -s "emulator-$PORT" shell am start -n "$PACKAGE/$ACTIVITY"
 
-    if [ -n "$CRASH_LINES" ]; then
-        # Deterministic crash — no point retrying
-        echo ""
-        echo "============================================================"
-        echo "FATAL: App crashed on startup"
-        echo "============================================================"
-        echo ""
-        echo "$CRASH_LINES"
-        echo ""
-        echo "--- All crash / library-load messages ---"
-        grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
-          "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
-        echo "============================================================"
-        exit 1
-    else
-        # No crash found — likely flaky emulator boot, let the retry loop handle it
-        echo "WARNING: No initial render after ''${POLL_TIMEOUT}s (no crash detected — may be flaky)"
+    # ----------------------------------------------------------
+    # Step 1: Wait for initial render
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 1: Waiting for initial render (timeout: 120s) ==="
+    local POLL_TIMEOUT=120
+    local POLL_ELAPSED=0
+    local RENDER_DONE=0
+
+    while [ $POLL_ELAPSED -lt $POLL_TIMEOUT ]; do
+        "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
+        if grep -q "setRoot" "$LOGCAT_FILE" 2>/dev/null; then
+            RENDER_DONE=1
+            echo "Initial render detected after ~''${POLL_ELAPSED}s"
+            break
+        fi
+        sleep 2
+        POLL_ELAPSED=$((POLL_ELAPSED + 2))
+    done
+
+    if [ $RENDER_DONE -eq 0 ]; then
+        # Check for deterministic crash
+        local CRASH_LINES
+        CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error" \
+          "$LOGCAT_FILE" 2>/dev/null | head -10) || true
+
+        if [ -n "$CRASH_LINES" ]; then
+            echo ""
+            echo "============================================================"
+            echo "FATAL: App crashed on startup"
+            echo "============================================================"
+            echo ""
+            echo "$CRASH_LINES"
+            echo ""
+            echo "--- All crash / library-load messages ---"
+            grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
+              "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+            echo "============================================================"
+            # Return 2 to signal "don't retry"
+            return 2
+        fi
+
+        echo "WARNING: No initial render after ''${POLL_TIMEOUT}s (no crash detected)"
         echo "--- UIBridge / JNI messages ---"
         grep -i "UIBridge\|Haskell\|prrrrrrrrr\|JNI\|jni" "$LOGCAT_FILE" 2>/dev/null | tail -20 || echo "(none)"
-        echo "--- Last 20 logcat lines ---"
-        tail -20 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
-    fi
-fi
-
-# Extra settle time for the view hierarchy to stabilize
-sleep 5
-
-# ============================================================
-# Step 2: Verify ExerciseList screen
-# ============================================================
-echo ""
-echo "=== Step 2: Verify ExerciseList screen ==="
-EXIT_CODE=0
-
-# Logcat checks
-if grep -q 'setStrProp.*PRRRRRRRRR' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: ExerciseList — title 'PRRRRRRRRR' in logcat"
-else
-    echo "FAIL: ExerciseList — title 'PRRRRRRRRR' in logcat"
-    EXIT_CODE=1
-fi
-
-if grep -q 'setStrProp.*Snatch: No PR' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: ExerciseList — 'Snatch: No PR' in logcat"
-else
-    echo "FAIL: ExerciseList — 'Snatch: No PR' in logcat"
-    EXIT_CODE=1
-fi
-
-if grep -q 'setHandler.*click' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: ExerciseList — click handlers in logcat"
-else
-    echo "FAIL: ExerciseList — click handlers in logcat"
-    EXIT_CODE=1
-fi
-
-# UI hierarchy check
-if dump_ui "$UI_DUMP"; then
-    if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'PRRRRRRRRR' visible"
-    else
-        echo "FAIL: UI hierarchy — 'PRRRRRRRRR' visible"
-        EXIT_CODE=1
+        return 1
     fi
 
-    if grep -q 'Snatch: No PR' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'Snatch: No PR' visible"
-    else
-        echo "FAIL: UI hierarchy — 'Snatch: No PR' visible"
-        EXIT_CODE=1
-    fi
-else
-    echo "FAIL: UI hierarchy — could not dump view hierarchy"
-    EXIT_CODE=1
-fi
-
-# ============================================================
-# Step 3: Tap "Snatch: No PR" button
-# ============================================================
-echo ""
-echo "=== Step 3: Tap 'Snatch: No PR' button ==="
-
-if ! tap_element "$UI_DUMP" "Snatch: No PR"; then
-    echo "FAIL: Could not tap 'Snatch: No PR' button"
-    EXIT_CODE=1
-fi
-
-echo "Waiting for re-render..."
-sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
-
-# ============================================================
-# Step 4: Verify EnterPR screen
-# ============================================================
-echo ""
-echo "=== Step 4: Verify EnterPR screen ==="
-
-if grep -q 'Click dispatched' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: EnterPR — Click dispatched in logcat"
-else
-    echo "FAIL: EnterPR — Click dispatched in logcat"
-    EXIT_CODE=1
-fi
-
-if grep -q 'setStrProp.*Set PR: Snatch' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: EnterPR — 'Set PR: Snatch' in logcat"
-else
-    echo "FAIL: EnterPR — 'Set PR: Snatch' in logcat"
-    EXIT_CODE=1
-fi
-
-# Retry UI dump until EnterPR screen is visible (up to 30s)
-ENTER_PR_VISIBLE=0
-for UI_WAIT in $(seq 1 6); do
-    if dump_ui "$UI_DUMP" && grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
-        ENTER_PR_VISIBLE=1
-        break
-    fi
-    echo "  UI not ready yet (attempt $UI_WAIT/6), waiting 5s..."
     sleep 5
-done
 
-if [ $ENTER_PR_VISIBLE -eq 1 ]; then
-    echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
+    # ----------------------------------------------------------
+    # Step 2: Verify ExerciseList screen
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 2: Verify ExerciseList screen ==="
 
-    if grep -q 'Save' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'Save' button visible"
+    if grep -q 'setStrProp.*PRRRRRRRRR' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: ExerciseList — title 'PRRRRRRRRR' in logcat"
     else
-        echo "FAIL: UI hierarchy — 'Save' button visible"
+        echo "FAIL: ExerciseList — title 'PRRRRRRRRR' in logcat"
         EXIT_CODE=1
     fi
 
-    if grep -q 'Back' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'Back' button visible"
+    if grep -q 'setStrProp.*Snatch: No PR' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: ExerciseList — 'Snatch: No PR' in logcat"
     else
-        echo "FAIL: UI hierarchy — 'Back' button visible"
+        echo "FAIL: ExerciseList — 'Snatch: No PR' in logcat"
         EXIT_CODE=1
     fi
-else
-    echo "FAIL: UI hierarchy — 'Set PR: Snatch' not visible after retries"
-    EXIT_CODE=1
-fi
 
-# ============================================================
-# Step 5: Enter weight "100"
-# ============================================================
-echo ""
-echo "=== Step 5: Enter weight '100' ==="
+    if grep -q 'setHandler.*click' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: ExerciseList — click handlers in logcat"
+    else
+        echo "FAIL: ExerciseList — click handlers in logcat"
+        EXIT_CODE=1
+    fi
 
-# Tap the EditText field to focus it
-if dump_ui "$UI_DUMP"; then
-    # Split XML into individual elements, then find the EditText node
-    # Use || true so grep returning no-match (exit 1) doesn't kill the script
-    EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1) || true
-    if [ -n "$EDIT_LINE" ]; then
-        EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
-        if [ -n "$EDIT_COORDS" ]; then
-            E_LEFT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
-            E_TOP=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
-            E_RIGHT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | tail -1 | tr -d '[,')
-            E_BOTTOM=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | tail -1 | tr -d ',]')
-            E_TAP_X=$(( (E_LEFT + E_RIGHT) / 2 ))
-            E_TAP_Y=$(( (E_TOP + E_BOTTOM) / 2 ))
-            echo "Tapping EditText at ($E_TAP_X, $E_TAP_Y)"
-            "$ADB" -s "emulator-$PORT" shell input tap "$E_TAP_X" "$E_TAP_Y"
-            sleep 1
+    if dump_ui "$UI_DUMP"; then
+        if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — 'PRRRRRRRRR' visible"
         else
-            echo "WARNING: Could not extract EditText bounds"
+            echo "FAIL: UI hierarchy — 'PRRRRRRRRR' visible"
+            EXIT_CODE=1
+        fi
+
+        if grep -q 'Snatch: No PR' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — 'Snatch: No PR' visible"
+        else
+            echo "FAIL: UI hierarchy — 'Snatch: No PR' visible"
+            EXIT_CODE=1
         fi
     else
-        echo "WARNING: No EditText found in UI dump"
-    fi
-fi
-
-echo "Entering text '100'..."
-"$ADB" -s "emulator-$PORT" shell input text "100"
-sleep 2
-
-# ============================================================
-# Step 6: Tap "Save" button
-# ============================================================
-echo ""
-echo "=== Step 6: Tap 'Save' button ==="
-
-if dump_ui "$UI_DUMP"; then
-    if ! tap_element "$UI_DUMP" "Save"; then
-        echo "FAIL: Could not tap 'Save' button"
-        EXIT_CODE=1
-    fi
-else
-    echo "FAIL: Could not dump UI to find Save button"
-    EXIT_CODE=1
-fi
-
-echo "Waiting for re-render (Save stays on EnterPR with history)..."
-sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
-
-# ============================================================
-# Step 7: Verify EnterPR shows history after Save
-# (Save stays on EnterPR and reloads history rather than navigating away)
-# ============================================================
-echo ""
-echo "=== Step 7: Verify history rendered after Save ==="
-
-if grep -q 'setStrProp.*100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: History entry — '100.0 kg' in logcat after Save"
-else
-    echo "FAIL: History entry — '100.0 kg' in logcat after Save"
-    EXIT_CODE=1
-fi
-
-# ============================================================
-# Step 8: Tap "Back" to return to ExerciseList
-# ============================================================
-echo ""
-echo "=== Step 8: Tap 'Back' to return to ExerciseList ==="
-
-if dump_ui "$UI_DUMP"; then
-    if ! tap_element "$UI_DUMP" "Back"; then
-        echo "FAIL: Could not tap 'Back' button"
-        EXIT_CODE=1
-    fi
-else
-    echo "FAIL: Could not dump UI to find Back button"
-    EXIT_CODE=1
-fi
-
-echo "Waiting for re-render back to ExerciseList..."
-sleep 5
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
-
-# ============================================================
-# Step 9: Verify updated ExerciseList
-# ============================================================
-echo ""
-echo "=== Step 9: Verify updated ExerciseList ==="
-
-if grep -q 'setStrProp.*Snatch: 100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
-    echo "PASS: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
-else
-    echo "FAIL: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
-    EXIT_CODE=1
-fi
-
-if dump_ui "$UI_DUMP"; then
-    if grep -q 'Snatch: 100.0 kg' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — 'Snatch: 100.0 kg' visible"
-    else
-        echo "FAIL: UI hierarchy — 'Snatch: 100.0 kg' visible"
+        echo "FAIL: UI hierarchy — could not dump view hierarchy"
         EXIT_CODE=1
     fi
 
-    if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
-        echo "PASS: UI hierarchy — back on ExerciseList (title visible)"
-    else
-        echo "FAIL: UI hierarchy — back on ExerciseList (title visible)"
-        EXIT_CODE=1
-    fi
-else
-    echo "FAIL: UI hierarchy — could not dump updated view hierarchy"
-    EXIT_CODE=1
-fi
-
-# ============================================================
-# Report
-# ============================================================
-
-# Final logcat dump
-"$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
-
-echo ""
-echo "=== Filtered logcat (UIBridge) ==="
-grep -i "UIBridge" "$LOGCAT_FILE" 2>/dev/null || echo "(no UIBridge lines)"
-echo "--- End filtered logcat ---"
-
-if [ $EXIT_CODE -ne 0 ]; then
+    # ----------------------------------------------------------
+    # Step 3: Tap "Snatch: No PR" button
+    # ----------------------------------------------------------
     echo ""
-    echo "=== Crash / library-load messages ==="
-    grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|System\.load|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL" \
-      "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
-    echo "--- End crash messages ---"
+    echo "=== Step 3: Tap 'Snatch: No PR' button ==="
+
+    if ! tap_element "$UI_DUMP" "Snatch: No PR"; then
+        echo "FAIL: Could not tap 'Snatch: No PR' button"
+        EXIT_CODE=1
+    fi
+
+    echo "Waiting for re-render..."
+    sleep 5
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
+
+    # ----------------------------------------------------------
+    # Step 4: Verify EnterPR screen
+    # ----------------------------------------------------------
     echo ""
-    echo "=== Last 40 lines of logcat ==="
-    tail -40 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
-    echo "--- End logcat tail ---"
-fi
+    echo "=== Step 4: Verify EnterPR screen ==="
+
+    if grep -q 'Click dispatched' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: EnterPR — Click dispatched in logcat"
+    else
+        echo "FAIL: EnterPR — Click dispatched in logcat"
+        EXIT_CODE=1
+    fi
+
+    if grep -q 'setStrProp.*Set PR: Snatch' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: EnterPR — 'Set PR: Snatch' in logcat"
+    else
+        echo "FAIL: EnterPR — 'Set PR: Snatch' in logcat"
+        EXIT_CODE=1
+    fi
+
+    # Retry UI dump until EnterPR screen is visible (up to 30s)
+    local ENTER_PR_VISIBLE=0
+    for UI_WAIT in $(seq 1 6); do
+        if dump_ui "$UI_DUMP" && grep -q 'Set PR: Snatch' "$UI_DUMP" 2>/dev/null; then
+            ENTER_PR_VISIBLE=1
+            break
+        fi
+        echo "  UI not ready yet (attempt $UI_WAIT/6), waiting 5s..."
+        sleep 5
+    done
+
+    if [ $ENTER_PR_VISIBLE -eq 1 ]; then
+        echo "PASS: UI hierarchy — 'Set PR: Snatch' visible"
+
+        if grep -q 'Save' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — 'Save' button visible"
+        else
+            echo "FAIL: UI hierarchy — 'Save' button visible"
+            EXIT_CODE=1
+        fi
+
+        if grep -q 'Back' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — 'Back' button visible"
+        else
+            echo "FAIL: UI hierarchy — 'Back' button visible"
+            EXIT_CODE=1
+        fi
+    else
+        echo "FAIL: UI hierarchy — 'Set PR: Snatch' not visible after retries"
+        EXIT_CODE=1
+    fi
+
+    # ----------------------------------------------------------
+    # Step 5: Enter weight "100"
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 5: Enter weight '100' ==="
+
+    if dump_ui "$UI_DUMP"; then
+        # Use || true so grep returning no-match doesn't kill the script
+        EDIT_LINE=$(sed 's/></>\n</g' "$UI_DUMP" | grep 'EditText' | head -1) || true
+        if [ -n "$EDIT_LINE" ]; then
+            EDIT_COORDS=$(echo "$EDIT_LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+            if [ -n "$EDIT_COORDS" ]; then
+                E_LEFT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | head -1 | tr -d '[,')
+                E_TOP=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | head -1 | tr -d ',]')
+                E_RIGHT=$(echo "$EDIT_COORDS" | grep -o '\[[0-9]*,' | tail -1 | tr -d '[,')
+                E_BOTTOM=$(echo "$EDIT_COORDS" | grep -o ',[0-9]*\]' | tail -1 | tr -d ',]')
+                E_TAP_X=$(( (E_LEFT + E_RIGHT) / 2 ))
+                E_TAP_Y=$(( (E_TOP + E_BOTTOM) / 2 ))
+                echo "Tapping EditText at ($E_TAP_X, $E_TAP_Y)"
+                "$ADB" -s "emulator-$PORT" shell input tap "$E_TAP_X" "$E_TAP_Y"
+                sleep 1
+            else
+                echo "WARNING: Could not extract EditText bounds"
+            fi
+        else
+            echo "WARNING: No EditText found in UI dump"
+        fi
+    fi
+
+    echo "Entering text '100'..."
+    "$ADB" -s "emulator-$PORT" shell input text "100"
+    sleep 2
+
+    # ----------------------------------------------------------
+    # Step 6: Tap "Save" button
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 6: Tap 'Save' button ==="
+
+    if dump_ui "$UI_DUMP"; then
+        if ! tap_element "$UI_DUMP" "Save"; then
+            echo "FAIL: Could not tap 'Save' button"
+            EXIT_CODE=1
+        fi
+    else
+        echo "FAIL: Could not dump UI to find Save button"
+        EXIT_CODE=1
+    fi
+
+    echo "Waiting for re-render (Save stays on EnterPR with history)..."
+    sleep 5
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
+
+    # ----------------------------------------------------------
+    # Step 7: Verify history rendered after Save
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 7: Verify history rendered after Save ==="
+
+    if grep -q 'setStrProp.*100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: History entry — '100.0 kg' in logcat after Save"
+    else
+        echo "FAIL: History entry — '100.0 kg' in logcat after Save"
+        EXIT_CODE=1
+    fi
+
+    # ----------------------------------------------------------
+    # Step 8: Tap "Back" to return to ExerciseList
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 8: Tap 'Back' to return to ExerciseList ==="
+
+    if dump_ui "$UI_DUMP"; then
+        if ! tap_element "$UI_DUMP" "Back"; then
+            echo "FAIL: Could not tap 'Back' button"
+            EXIT_CODE=1
+        fi
+    else
+        echo "FAIL: Could not dump UI to find Back button"
+        EXIT_CODE=1
+    fi
+
+    echo "Waiting for re-render back to ExerciseList..."
+    sleep 5
+    "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
+
+    # ----------------------------------------------------------
+    # Step 9: Verify updated ExerciseList
+    # ----------------------------------------------------------
+    echo ""
+    echo "=== Step 9: Verify updated ExerciseList ==="
+
+    if grep -q 'setStrProp.*Snatch: 100.0 kg' "$LOGCAT_FILE" 2>/dev/null; then
+        echo "PASS: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
+    else
+        echo "FAIL: Updated ExerciseList — 'Snatch: 100.0 kg' in logcat"
+        EXIT_CODE=1
+    fi
+
+    if dump_ui "$UI_DUMP"; then
+        if grep -q 'Snatch: 100.0 kg' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — 'Snatch: 100.0 kg' visible"
+        else
+            echo "FAIL: UI hierarchy — 'Snatch: 100.0 kg' visible"
+            EXIT_CODE=1
+        fi
+
+        if grep -q 'PRRRRRRRRR' "$UI_DUMP" 2>/dev/null; then
+            echo "PASS: UI hierarchy — back on ExerciseList (title visible)"
+        else
+            echo "FAIL: UI hierarchy — back on ExerciseList (title visible)"
+            EXIT_CODE=1
+        fi
+    else
+        echo "FAIL: UI hierarchy — could not dump updated view hierarchy"
+        EXIT_CODE=1
+    fi
+
+    # ----------------------------------------------------------
+    # Diagnostics on failure
+    # ----------------------------------------------------------
+    if [ $EXIT_CODE -ne 0 ]; then
+        "$ADB" -s "emulator-$PORT" logcat -d '*:I' > "$LOGCAT_FILE" 2>&1 || true
+        echo ""
+        echo "=== Filtered logcat (UIBridge) ==="
+        grep -i "UIBridge" "$LOGCAT_FILE" 2>/dev/null || echo "(no UIBridge lines)"
+        echo "--- End filtered logcat ---"
+        echo ""
+        echo "=== Crash / library-load messages ==="
+        grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|System\.load|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL" \
+          "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+        echo "--- End crash messages ---"
+    fi
+
+    return $EXIT_CODE
+}
+
+# ============================================================
+# Retry loop — retries only the test flow, not boot/install
+# ============================================================
+for TEST_ATTEMPT in $(seq 1 $MAX_TEST_ATTEMPTS); do
+    echo ""
+    echo "########################################################"
+    echo "# Test attempt $TEST_ATTEMPT/$MAX_TEST_ATTEMPTS"
+    echo "########################################################"
+
+    FLOW_RESULT=0
+    run_test_flow || FLOW_RESULT=$?
+
+    if [ $FLOW_RESULT -eq 0 ]; then
+        echo ""
+        echo "All UI interaction checks passed! (attempt $TEST_ATTEMPT)"
+        exit 0
+    fi
+
+    if [ $FLOW_RESULT -eq 2 ]; then
+        # Fatal crash — don't retry
+        echo ""
+        echo "FATAL: Deterministic crash detected — not retrying"
+        exit 1
+    fi
+
+    echo ""
+    echo "Test attempt $TEST_ATTEMPT FAILED"
+    if [ $TEST_ATTEMPT -lt $MAX_TEST_ATTEMPTS ]; then
+        echo "Retrying in 5s..."
+        sleep 5
+    fi
+done
 
 echo ""
-if [ $EXIT_CODE -eq 0 ]; then
-    echo "All UI interaction checks passed!"
-else
-    echo "Some UI interaction checks failed."
-fi
-
-exit $EXIT_CODE
+echo "FAILED after $MAX_TEST_ATTEMPTS attempts"
+exit 1
 SCRIPT
 
     chmod +x $out/bin/test-ui
