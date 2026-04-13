@@ -28,8 +28,8 @@ import GymTracker.Model
   )
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
 import GymTracker.Sync (triggerSync)
-import HaskellMobile (Action, OnChange, ActionM, createAction, createOnChange)
-import HaskellMobile.Widget
+import Hatter (Action, OnChange, ActionM, createAction, createOnChange)
+import Hatter.Widget
   ( AnimatedConfig(..)
   , ButtonConfig(..)
   , Color(..)

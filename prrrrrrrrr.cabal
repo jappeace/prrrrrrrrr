@@ -55,7 +55,7 @@ common common-options
 library
   import: common-options
   exposed-modules:
-      HaskellMobile.App
+      Hatter.App
       GymTracker.AppState
       GymTracker.Config
       GymTracker.Storage
@@ -63,15 +63,15 @@ library
       GymTracker.Views
       GymTracker.ServantNative
   reexported-modules:
-      HaskellMobile,
-      HaskellMobile.Types,
-      HaskellMobile.Lifecycle,
-      HaskellMobile.Widget,
-      HaskellMobile.Render
+      Hatter,
+      Hatter.Types,
+      Hatter.Lifecycle,
+      Hatter.Widget,
+      Hatter.Render
   hs-source-dirs:
       src
   build-depends:
-      haskell-mobile,
+      hatter,
       prrrrrrrrr-schema,
       pr-sync-api,
       text,
@@ -117,7 +117,7 @@ test-suite unit
       persistent,
       persistent-sqlite,
       servant-client-core,
-      haskell-mobile,
+      hatter,
       bytestring,
       http-types,
       time

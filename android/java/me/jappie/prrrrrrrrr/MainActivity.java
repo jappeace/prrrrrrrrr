@@ -1,9 +1,9 @@
 package me.jappie.prrrrrrrrr;
 
 import android.os.Bundle;
-import me.jappie.haskellmobile.HaskellMobileActivity;
+import me.jappie.hatter.HatterActivity;
 
-public class MainActivity extends HaskellMobileActivity {
+public class MainActivity extends HatterActivity {
 
     /** Pass the Android files directory to native code for SQLite storage. */
     private native void setFilesDir(String path);

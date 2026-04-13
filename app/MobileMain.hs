@@ -7,8 +7,8 @@
 module Main where
 
 import Foreign.Ptr (Ptr)
-import HaskellMobile (startMobileApp, platformLog, AppContext)
-import HaskellMobile.App (mobileApp)
+import Hatter (startMobileApp, platformLog, AppContext)
+import Hatter.App (mobileApp)
 
 main :: IO (Ptr AppContext)
 main = do

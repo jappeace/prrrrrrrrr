@@ -21,8 +21,8 @@ chmod -R u+w "$workdir"
 # Generate Xcode project and build
 cd "$workdir"
 xcodegen generate
-xcodebuild -scheme HaskellMobile -sdk iphonesimulator -configuration Debug build
+xcodebuild -scheme Hatter -sdk iphonesimulator -configuration Debug build
 
 # Install on booted simulator
-xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/HaskellMobile.app
-xcrun simctl launch booted me.jappie.haskellmobile
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/Hatter.app
+xcrun simctl launch booted me.jappie.hatter

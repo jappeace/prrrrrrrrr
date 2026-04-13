@@ -4,8 +4,8 @@ packages:
   haskell-mobile-src/
   pr-sync-api-src/
 
--- Only test our package, not haskell-mobile
-package haskell-mobile
+-- Only test our package, not hatter
+package hatter
   tests: False
 
 -- Only test our package, not pr-sync-api

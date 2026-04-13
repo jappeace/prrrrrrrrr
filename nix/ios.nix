@@ -7,10 +7,10 @@
 , mainModule ? ../app/MobileMain.hs
 }:
 let
-  haskellMobileSrc = sources.haskell-mobile;
+  hatterSrc = sources.haskell-mobile;
   prSyncApiSrc = sources.pr-sync-api;
   schemaSrc = ../schema;
-  lib = import "${haskellMobileSrc}/nix/lib.nix" { inherit sources; };
+  lib = import "${hatterSrc}/nix/lib.nix" { inherit sources; };
 
   # Inline cabal2nix function — only library deps, no test deps.
   # haskell-mobile is compiled separately by mkIOSLib.
@@ -34,7 +34,7 @@ let
       license = lib.licenses.mit;
     };
 
-  iosDeps = import "${haskellMobileSrc}/nix/ios-deps.nix" {
+  iosDeps = import "${hatterSrc}/nix/ios-deps.nix" {
     inherit sources consumerCabal2Nix;
     hpkgs = self: super: {
       prrrrrrrrr-schema = self.callCabal2nix "prrrrrrrrr-schema" schemaSrc {};
@@ -44,12 +44,12 @@ let
 
 in
 lib.mkIOSLib {
-  inherit haskellMobileSrc mainModule simulator;
+  inherit hatterSrc mainModule simulator;
   pname = "prrrrrrrrr-ios";
   crossDeps = iosDeps;
   extraModuleCopy = ''
-    mkdir -p GymTracker
-    cp ${../src/HaskellMobile/App.hs} HaskellMobile/App.hs
+    mkdir -p GymTracker Hatter
+    cp ${../src/Hatter/App.hs} Hatter/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
     cp ${../src/GymTracker/ServantNative.hs} GymTracker/ServantNative.hs

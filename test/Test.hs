@@ -30,8 +30,8 @@ import GymTracker.Storage
   , PrHistory(..), EntityField(..)
   )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
-import HaskellMobile.Widget (AnimatedConfig(..), Easing(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
-import HaskellMobile (newActionState, runActionM)
+import Hatter.Widget (AnimatedConfig(..), Easing(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
+import Hatter (newActionState, runActionM)
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -45,7 +45,7 @@ import GymTracker.ServantNative
   , fromHttpResponse
   , fromHttpError
   )
-import HaskellMobile
+import Hatter
   ( MobileApp(..)
   , AppContext(..)
   , newAppContext
@@ -53,7 +53,7 @@ import HaskellMobile
   , derefAppContext
   , defaultMobileContext
   )
-import HaskellMobile.Http
+import Hatter.Http
   ( HttpMethod(..)
   , HttpRequest(..)
   , HttpResponse(..)
