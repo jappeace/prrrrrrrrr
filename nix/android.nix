@@ -42,7 +42,7 @@ in
 lib.mkAndroidLib {
   inherit hatterSrc mainModule crossDeps;
   pname = "prrrrrrrrr-android";
-  soName = "libhaskellmobile.so";
+  soName = "libhatter.so";
   javaPackageName = "me.jappie.prrrrrrrrr";
   extraJniBridge = [ ../cbits/jni_extras.c ];
   extraNdkCompile = ndkCc: sysroot: ''
