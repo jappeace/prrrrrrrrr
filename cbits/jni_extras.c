@@ -3,12 +3,12 @@
  *
  * Compiled with -DJNI_PACKAGE=me_jappie_prrrrrrrrr via extraJniBridge
  * in nix/android.nix.  The standard 11 JNI methods come from
- * haskell-mobile's jni_bridge.c (compiled with me_jappie_haskellmobile
- * since they are declared on HaskellMobileActivity).
+ * hatter's jni_bridge.c (compiled with me_jappie_hatter
+ * since they are declared on HatterActivity).
  *
  * Consumer-specific native methods (like setFilesDir) are declared on
  * the consumer's own MainActivity subclass, so JNI_CLASS must be
- * MainActivity here — not the library's HaskellMobileActivity default.
+ * MainActivity here — not the library's HatterActivity default.
  */
 
 #include <jni.h>
