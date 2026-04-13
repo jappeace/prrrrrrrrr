@@ -83,7 +83,8 @@ library
       case-insensitive,
       mtl,
       bytestring,
-      time
+      time,
+      random
   c-sources:
       cbits/storage_helper.c
   include-dirs:
