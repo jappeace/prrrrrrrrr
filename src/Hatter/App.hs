@@ -2,7 +2,7 @@
 -- | App registration for the gym PR tracker.
 module Hatter.App (mobileApp) where
 
-import Data.IORef (readIORef, writeIORef)
+import Data.IORef (writeIORef)
 import Data.Text (pack)
 import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
@@ -20,20 +20,11 @@ mobileApp = MobileApp
   , maView = \userState -> do
       -- Capture HttpState from the framework on every render.
       writeIORef (stHttpState globalState) (Just (userHttpState userState))
-      -- On first render, trigger boot sync (HttpState wasn't available at Create).
-      needsBoot <- readIORef (stNeedsSyncOnBoot globalState)
-      case needsBoot of
-        True -> do
-          writeIORef (stNeedsSyncOnBoot globalState) False
-          triggerSync globalState
-        False -> pure ()
       appRootView globalAppActions globalState
   , maActionState = globalActionState
   }
 
 -- | MobileContext that logs lifecycle events and triggers sync on Resume.
--- Boot sync is handled by the first render (see 'maView') because
--- 'HttpState' is not yet available during the 'Create' lifecycle event.
 syncMobileContext :: MobileContext
 syncMobileContext = MobileContext
   { onLifecycle = \event -> do
