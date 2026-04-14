@@ -16,8 +16,7 @@ module GymTracker.Sync
   )
 where
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (async)
+import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.MVar (tryTakeMVar, putMVar)
 import Control.Exception (SomeException, catch, finally)
 import Data.IORef (readIORef, writeIORef)
@@ -70,7 +69,7 @@ triggerSync appState = do
   case acquired of
     Nothing -> platformLog "Sync skipped: already in progress"
     Just () -> do
-      _ <- async $
+      _ <- forkIO $
         (do httpState <- waitForHttp appState
             syncAction appState httpState)
           `catch` (\(exc :: SomeException) ->

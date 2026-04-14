@@ -19,7 +19,7 @@ let
     , pr-sync-api
     , servant, servant-client-core
     , http-types, http-media, case-insensitive, mtl, bytestring, time
-    , random, async
+    , random
     }:
     mkDerivation {
       pname = "prrrrrrrrr";
@@ -30,7 +30,7 @@ let
         pr-sync-api
         servant servant-client-core
         http-types http-media case-insensitive mtl bytestring time
-        random async
+        random
       ];
       license = lib.licenses.mit;
     };

@@ -87,8 +87,7 @@ library
       mtl,
       bytestring,
       time,
-      random,
-      async
+      random
   c-sources:
       cbits/storage_helper.c
   include-dirs:
