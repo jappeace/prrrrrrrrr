@@ -13,21 +13,25 @@
 # Usage:
 #   nix-build nix/emulator-ui.nix -o result-emulator-ui
 #   ./result-emulator-ui/bin/test-ui
-{ sources ? import ../npins }:
+{ sources ? import ../npins
+, abiVersion ? "x86_64"   # "x86_64" or "arm64-v8a"
+, apkPath ? null           # external APK path; when null, build from source
+}:
 let
   pkgs = import sources.nixpkgs {
     config.allowUnfree = true;
     config.android_sdk.accept_license = true;
   };
 
-  apk = import ./apk.nix { inherit sources; };
+  apk = if apkPath != null then apkPath
+        else import ./apk.nix { inherit sources; };
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     platformVersions = [ "34" ];
     includeEmulator = true;
     includeSystemImages = true;
     systemImageTypes = [ "google_apis" ];
-    abiVersions = [ "x86_64" ];
+    abiVersions = [ abiVersion ];
     cmdLineToolsVersion = "8.0";
   };
 
@@ -36,7 +40,6 @@ let
 
   platformVersion = "34";
   systemImageType = "google_apis";
-  abiVersion = "x86_64";
   imagePackage = "system-images;android-${platformVersion};${systemImageType};${abiVersion}";
 
 in pkgs.stdenv.mkDerivation {
@@ -58,7 +61,7 @@ unset ANDROID_NDK_HOME 2>/dev/null || true
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
 EMULATOR="$ANDROID_SDK_ROOT/emulator/emulator"
 AVDMANAGER="${sdk}/bin/avdmanager"
-APK_PATH="${apk}/prrrrrrrrr.apk"
+APK_PATH="''${OVERRIDE_APK_PATH:-${apk}/prrrrrrrrr.apk}"
 PACKAGE="me.jappie.prrrrrrrrr"
 ACTIVITY=".MainActivity"
 DEVICE_NAME="test_ui"

@@ -23,21 +23,51 @@ jobs:
           access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
           extra-substituters = https://nix-cache.jappie.me
           extra-trusted-public-keys = nix-cache.jappie.me:WjkKcvFtHih2i+n7bdsrJ3HuGboJiU2hA2CZbf9I9oc=
+    - name: Build (Haskell unit tests + Android library + APK)
+      run: |
+        nix-build nix/ci.nix -A native -A android
+        nix-build nix/ci.nix -A apk -o result-apk
+    - name: Upload APK for UI test
+      uses: actions/upload-artifact@v4
+      with:
+        name: prrrrrrrrr-apk
+        path: result-apk/prrrrrrrrr.apk
+        retention-days: 1
+    - name: Cancel workflow on failure
+      if: failure()
+      continue-on-error: true
+      run: gh run cancel ${{ github.run_id }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+  ui-test:
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    steps:
+    - uses: actions/checkout@v4
+    - uses: cachix/install-nix-action@v31
+      with:
+        extra_nix_config: |
+          sandbox = relaxed
+          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+          extra-substituters = https://nix-cache.jappie.me
+          extra-trusted-public-keys = nix-cache.jappie.me:WjkKcvFtHih2i+n7bdsrJ3HuGboJiU2hA2CZbf9I9oc=
     - name: Enable KVM for Android emulator
       run: |
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
         sudo udevadm control --reload-rules
         sudo udevadm trigger --name-match=kvm
-    - name: Build (Haskell unit tests + Android library + APK)
-      run: nix-build nix/ci.nix -A native -A android -A apk
-    - name: Build UI test
-      run: nix-build nix/emulator-ui.nix -o result-emulator-ui
+    - name: Download APK
+      uses: actions/download-artifact@v4
+      with:
+        name: prrrrrrrrr-apk
+        path: /tmp/apk
+    - name: Build UI test (arm64 emulator)
+      run: nix-build nix/emulator-ui.nix --arg abiVersion '"arm64-v8a"' -o result-emulator-ui
     - name: Run UI test
       run: |
         set -o pipefail
-        # Test script boots emulator + installs APK once, then retries
-        # the test flow up to 3 times internally. Fatal crashes (e.g.
-        # UnsatisfiedLinkError) abort immediately without retrying.
+        export OVERRIDE_APK_PATH="/tmp/apk/prrrrrrrrr.apk"
         ./result-emulator-ui/bin/test-ui 2>&1 | tee /tmp/ui-test.log
     - name: Cancel workflow on failure
       if: failure()
