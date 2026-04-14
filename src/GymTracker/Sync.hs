@@ -16,8 +16,9 @@ module GymTracker.Sync
   )
 where
 
-import Control.Concurrent (forkIO)
-import Control.Exception (SomeException, catch)
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent.MVar (tryTakeMVar, putMVar)
+import Control.Exception (SomeException, catch, finally)
 import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict qualified as Map
 import Data.Proxy (Proxy(..))
@@ -56,20 +57,33 @@ recordsClient :: Text -> NativeClientM FullState
 _healthClient :<|> syncClient :<|> recordsClient =
   clientIn (Proxy @ServerApi) (Proxy @NativeClientM)
 
--- | Decide between full or incremental sync, run in a background thread.
--- Reads 'HttpState' from the 'AppState' IORef; skips if not yet available.
--- All exceptions are caught and logged — sync failure never crashes the app.
+-- | Trigger a sync in a background thread.
+-- Waits for 'HttpState' to become available (polling every 100ms),
+-- then runs the sync. Uses an 'MVar' lock to ensure only one sync
+-- runs at a time — concurrent calls are silently dropped.
 triggerSync :: AppState -> IO ()
 triggerSync appState = do
+  acquired <- tryTakeMVar (stSyncLock appState)
+  case acquired of
+    Nothing -> platformLog "Sync skipped: already in progress"
+    Just () -> do
+      _ <- forkIO $
+        (do httpState <- waitForHttp appState
+            syncAction appState httpState)
+          `catch` (\(exc :: SomeException) ->
+            platformLog ("Sync error: " <> pack (show exc)))
+          `finally` putMVar (stSyncLock appState) ()
+      pure ()
+
+-- | Poll 'stHttpState' every 100ms until it becomes 'Just'.
+waitForHttp :: AppState -> IO HttpState
+waitForHttp appState = do
   maybeHttp <- readIORef (stHttpState appState)
   case maybeHttp of
-    Nothing -> platformLog "Sync skipped: HTTP not ready"
-    Just httpState -> do
-      _ <- forkIO $
-        syncAction appState httpState
-          `catch` \(exc :: SomeException) ->
-            platformLog ("Sync error: " <> pack (show exc))
-      pure ()
+    Just httpState -> pure httpState
+    Nothing -> do
+      threadDelay 100_000
+      waitForHttp appState
 
 -- | Perform sync: full sync if no last sync time, incremental otherwise.
 syncAction :: AppState -> HttpState -> IO ()

@@ -7,6 +7,7 @@ module GymTracker.AppState
   )
 where
 
+import Control.Concurrent.MVar (MVar, newMVar)
 import Data.IORef (IORef, newIORef)
 import Data.Map.Strict (Map)
 import Data.Text (Text)
@@ -26,6 +27,8 @@ data AppState = AppState
   , stInputText       :: IORef Text
   , stHistory         :: IORef [(Double, Text, Maybe Text)]  -- ^ weight + timestamp + notes, newest first
   , stHttpState       :: IORef (Maybe HttpState)
+  , stSyncLock        :: MVar ()
+    -- ^ Held while a sync is in progress. 'tryPutMVar' guards against overlapping syncs.
   , stPercentage      :: IORef Word
     -- ^ Percentage of 1RM to calculate (0 = disabled).
   , stConfetti        :: IORef Bool
@@ -42,6 +45,7 @@ newAppState initialRecords = do
   inputText       <- newIORef ""
   history         <- newIORef []
   httpState       <- newIORef Nothing
+  syncLock        <- newMVar ()
   percentage      <- newIORef 0
   confetti        <- newIORef False
   notesInput      <- newIORef ""
@@ -51,6 +55,7 @@ newAppState initialRecords = do
     , stInputText       = inputText
     , stHistory         = history
     , stHttpState       = httpState
+    , stSyncLock        = syncLock
     , stPercentage      = percentage
     , stConfetti        = confetti
     , stNotesInput      = notesInput
