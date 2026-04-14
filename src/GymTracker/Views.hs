@@ -121,11 +121,12 @@ exerciseListView actions st = do
   records    <- readIORef (stRecords st)
   percentage <- readIORef (stPercentage st)
   let percentageRow = Styled centeredText $ TextInput TextInputConfig
-        { tiInputType = InputNumber
-        , tiHint      = "% of 1RM"
-        , tiValue     = if percentage == 0 then "" else pack (show percentage)
-        , tiOnChange  = aaPercentageInput actions
+        { tiInputType  = InputNumber
+        , tiHint       = "% of 1RM"
+        , tiValue      = if percentage == 0 then "" else pack (show percentage)
+        , tiOnChange   = aaPercentageInput actions
         , tiFontConfig = Nothing
+        , tiAutoFocus  = False
         }
       categorySection cat =
         Styled centeredText (Text TextConfig { tcLabel = categoryName cat, tcFontConfig = Nothing })
@@ -170,18 +171,20 @@ enterPRView actions st ex = do
         [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
         , Styled centeredText $ Text TextConfig { tcLabel = exerciseName ex, tcFontConfig = Nothing }
         , Styled centeredText $ TextInput TextInputConfig
-            { tiInputType = InputNumber
-            , tiHint      = "Weight (kg)"
-            , tiValue     = inputVal
-            , tiOnChange  = aaWeightInput actions
+            { tiInputType  = InputNumber
+            , tiHint       = "Weight (kg)"
+            , tiValue      = inputVal
+            , tiOnChange   = aaWeightInput actions
             , tiFontConfig = Nothing
+            , tiAutoFocus  = True
             }
         , Styled centeredText $ TextInput TextInputConfig
-            { tiInputType = InputText
-            , tiHint      = "Notes (optional)"
-            , tiValue     = notesVal
-            , tiOnChange  = aaNotesInput actions
+            { tiInputType  = InputText
+            , tiHint       = "Notes (optional)"
+            , tiValue      = notesVal
+            , tiOnChange   = aaNotesInput actions
             , tiFontConfig = Nothing
+            , tiAutoFocus  = False
             }
         , Row
             [ Button ButtonConfig
