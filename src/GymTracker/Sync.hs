@@ -75,14 +75,14 @@ triggerSync appState = do
           `finally` putMVar (stSyncLock appState) ()
       pure ()
 
--- | Poll 'stHttpState' every 100ms until it becomes 'Just'.
+-- | Poll 'stHttpState' every 1s until it becomes 'Just'.
 waitForHttp :: AppState -> IO HttpState
 waitForHttp appState = do
   maybeHttp <- readIORef (stHttpState appState)
   case maybeHttp of
     Just httpState -> pure httpState
     Nothing -> do
-      threadDelay 100_000
+      threadDelay 1_000_000
       waitForHttp appState
 
 -- | Perform sync: full sync if no last sync time, incremental otherwise.
