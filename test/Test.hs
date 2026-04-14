@@ -46,11 +46,13 @@ import GymTracker.ServantNative
   )
 import Hatter
   ( MobileApp(..)
-  , AppContext(..)
+  , defaultMobileContext
+  )
+import Hatter.AppContext
+  ( AppContext(..)
   , newAppContext
   , freeAppContext
   , derefAppContext
-  , defaultMobileContext
   )
 import Hatter.Http
   ( HttpMethod(..)

@@ -64,6 +64,7 @@ library
       GymTracker.ServantNative
   reexported-modules:
       Hatter,
+      Hatter.AppContext,
       Hatter.Types,
       Hatter.Lifecycle,
       Hatter.Widget,

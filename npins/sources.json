@@ -9,9 +9,9 @@
       },
       "branch": "master",
       "submodules": false,
-      "revision": "1ab93beb64218f73304ca2ba0df0784ff7e9efcd",
-      "url": "https://github.com/jappeace/hatter/archive/1ab93beb64218f73304ca2ba0df0784ff7e9efcd.tar.gz",
-      "hash": "sha256-X3e5peXJ9iPp9p/CgZlQSTXWI7YiH0Hqni/byv09ds8="
+      "revision": "849abb381033751019fce081719fbce29ed1a63a",
+      "url": "https://github.com/jappeace/hatter/archive/849abb381033751019fce081719fbce29ed1a63a.tar.gz",
+      "hash": "sha256-gOyQOm1ejAS0vNLFpyroU6IjB0QT3wn4KHYO4wjtiJg="
     },
     "mobile-core-tools": {
       "type": "Git",
