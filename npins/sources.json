@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace-sloth",
-        "repo": "haskell-mobile"
+        "owner": "jappeace",
+        "repo": "hatter"
       },
-      "branch": "feature/textinput-rerender-on-change",
+      "branch": "master",
       "submodules": false,
-      "revision": "2f10a9497f9f9f8701f9f5abd66ac53e61fbf717",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/2f10a9497f9f9f8701f9f5abd66ac53e61fbf717.tar.gz",
-      "hash": "sha256-vAXtG0dnHpXfdyAD4SQ09Xm1YAz4Py40NHjgWRhbYhY="
+      "revision": "5f3dc99e5490f351519f4b1d828c0b27f92e2af9",
+      "url": "https://github.com/jappeace/hatter/archive/5f3dc99e5490f351519f4b1d828c0b27f92e2af9.tar.gz",
+      "hash": "sha256-2XOM/1v6ZQOqek4qnD9dP40z/EtT5XbNtCkk5yitF40="
     },
     "mobile-core-tools": {
       "type": "Git",
