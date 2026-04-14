@@ -15,6 +15,7 @@ let
   # haskell-mobile is compiled separately by mkAndroidLib.
   consumerCabal2Nix =
     { mkDerivation, base, containers, lib, sqlite-simple, text
+    , beam-core, beam-sqlite
     , pr-sync-api
     , servant, servant-client-core
     , http-types, http-media, case-insensitive, mtl, bytestring, time
@@ -25,6 +26,7 @@ let
       version = "0.1.0.0";
       libraryHaskellDepends = [
         base containers sqlite-simple text
+        beam-core beam-sqlite
         pr-sync-api
         servant servant-client-core
         http-types http-media case-insensitive mtl bytestring time
