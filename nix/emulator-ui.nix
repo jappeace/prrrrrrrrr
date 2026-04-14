@@ -309,9 +309,9 @@ run_test_flow() {
     done
 
     if [ $RENDER_DONE -eq 0 ]; then
-        # Check for deterministic crash
+        # Check for deterministic crash (Java exceptions OR native SIGSEGV)
         local CRASH_LINES
-        CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error" \
+        CRASH_LINES=$(grep -iE "FATAL EXCEPTION|UnsatisfiedLinkError|dlopen failed|System\.loadLibrary|AndroidRuntime.*Error|Fatal signal|SIGSEGV|SIGABRT|SIGBUS" \
           "$LOGCAT_FILE" 2>/dev/null | head -10) || true
 
         if [ -n "$CRASH_LINES" ]; then
@@ -325,6 +325,12 @@ run_test_flow() {
             echo "--- All crash / library-load messages ---"
             grep -iE "FATAL|AndroidRuntime|UnsatisfiedLinkError|loadLibrary|haskellmobile|hatter|CRASH|SIGNAL|System.err" \
               "$LOGCAT_FILE" 2>/dev/null | tail -30 || echo "(none)"
+            echo ""
+            echo "--- Native crash tombstone (backtrace) ---"
+            grep -E "DEBUG\s*:" "$LOGCAT_FILE" 2>/dev/null | tail -80 || echo "(no tombstone)"
+            echo ""
+            echo "--- Full logcat around crash (last 120 lines) ---"
+            tail -120 "$LOGCAT_FILE" 2>/dev/null || echo "(empty)"
             echo "============================================================"
             # Return 2 to signal "don't retry"
             return 2
