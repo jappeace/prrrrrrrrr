@@ -16,7 +16,8 @@ module GymTracker.Sync
   )
 where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (withAsync, wait)
 import Control.Concurrent.MVar (tryTakeMVar, putMVar)
 import Control.Exception (SomeException, catch, finally)
 import Data.IORef (readIORef, writeIORef)
@@ -57,23 +58,22 @@ recordsClient :: Text -> NativeClientM FullState
 _healthClient :<|> syncClient :<|> recordsClient =
   clientIn (Proxy @ServerApi) (Proxy @NativeClientM)
 
--- | Trigger a sync in a background thread.
--- Waits for 'HttpState' to become available (polling every 100ms),
--- then runs the sync. Uses an 'MVar' lock to ensure only one sync
--- runs at a time — concurrent calls are silently dropped.
+-- | Wait for 'HttpState', then sync. Blocks until complete.
+-- Uses 'withAsync' for structured concurrency and an 'MVar' lock
+-- to ensure only one sync runs at a time.
 triggerSync :: AppState -> IO ()
 triggerSync appState = do
   acquired <- tryTakeMVar (stSyncLock appState)
   case acquired of
     Nothing -> platformLog "Sync skipped: already in progress"
-    Just () -> do
-      _ <- forkIO $
+    Just () ->
+      (withAsync
         (do httpState <- waitForHttp appState
             syncAction appState httpState)
-          `catch` (\(exc :: SomeException) ->
-            platformLog ("Sync error: " <> pack (show exc)))
-          `finally` putMVar (stSyncLock appState) ()
-      pure ()
+        wait)
+        `catch` (\(exc :: SomeException) ->
+          platformLog ("Sync error: " <> pack (show exc)))
+        `finally` putMVar (stSyncLock appState) ()
 
 -- | Poll 'stHttpState' every 1s until it becomes 'Just'.
 waitForHttp :: AppState -> IO HttpState
