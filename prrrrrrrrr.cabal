@@ -77,6 +77,8 @@ library
       text,
       containers,
       sqlite-simple,
+      beam-core,
+      beam-sqlite,
       servant,
       servant-client-core,
       http-types,

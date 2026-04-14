@@ -96,12 +96,11 @@ syncAction appState httpState = do
                 { recordExercise = exerciseName exercise
                 , recordWeightKg = weight
                 }) (Map.toList records)
-            historyEntries = map (\(exercise, weight, timestamp, notes) ->
+            historyEntries = map (\(exercise, weight, timestamp, _notes) ->
               HistoryEntry
                 { historyExercise = exerciseName exercise
                 , historyWeightKg = weight
                 , historyRecordedAt = timestamp
-                , historyNotes = notes
                 }) historySince
             syncReq = SyncRequest
               { syncLastSyncTime = since
@@ -123,7 +122,7 @@ mergeFullState conn appState fullState = do
     Nothing       -> pure ()
     ) (fullCurrentRecords fullState)
   mapM_ (\he -> case parseExercise (historyExercise he) of
-    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he) (historyNotes he)
+    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he) Nothing
     Nothing       -> pure ()
     ) (fullHistory fullState)
   setLastSyncTime conn (fullSyncTime fullState)
@@ -137,7 +136,7 @@ mergeSyncResponse conn appState syncResp = do
     Nothing       -> pure ()
     ) (syncedCurrentRecords syncResp)
   mapM_ (\he -> case parseExercise (historyExercise he) of
-    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he) (historyNotes he)
+    Just exercise -> mergeHistoryEntry conn exercise (historyWeightKg he) (historyRecordedAt he) Nothing
     Nothing       -> pure ()
     ) (syncedHistory syncResp)
   setLastSyncTime conn (syncTime syncResp)
