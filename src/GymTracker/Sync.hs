@@ -16,7 +16,7 @@ module GymTracker.Sync
   )
 where
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.Async (withAsync, wait)
 import Control.Concurrent.MVar (tryTakeMVar, putMVar)
 import Control.Exception (SomeException, catch, finally)
@@ -58,22 +58,28 @@ recordsClient :: Text -> NativeClientM FullState
 _healthClient :<|> syncClient :<|> recordsClient =
   clientIn (Proxy @ServerApi) (Proxy @NativeClientM)
 
--- | Wait for 'HttpState', then sync. Blocks until complete.
--- Uses 'withAsync' for structured concurrency and an 'MVar' lock
--- to ensure only one sync runs at a time.
+-- | Trigger a sync in a background thread.
+-- Uses 'forkIO' so the caller (lifecycle handler) is never blocked —
+-- blocking the Android main thread would deadlock because 'HttpState'
+-- is only set during render. Inside the forked thread, 'withAsync'
+-- provides structured concurrency: if the thread is killed, the sync
+-- operation is properly cancelled. An 'MVar' lock ensures only one
+-- sync runs at a time.
 triggerSync :: AppState -> IO ()
 triggerSync appState = do
   acquired <- tryTakeMVar (stSyncLock appState)
   case acquired of
     Nothing -> platformLog "Sync skipped: already in progress"
-    Just () ->
-      (withAsync
-        (do httpState <- waitForHttp appState
-            syncAction appState httpState)
-        (\syncThread -> wait syncThread))
-        `catch` (\(exc :: SomeException) ->
-          platformLog ("Sync error: " <> pack (show exc)))
-        `finally` putMVar (stSyncLock appState) ()
+    Just () -> do
+      _ <- forkIO $
+        (withAsync
+          (do httpState <- waitForHttp appState
+              syncAction appState httpState)
+          (\syncThread -> wait syncThread))
+          `catch` (\(exc :: SomeException) ->
+            platformLog ("Sync error: " <> pack (show exc)))
+          `finally` putMVar (stSyncLock appState) ()
+      pure ()
 
 -- | Poll 'stHttpState' every 1s until it becomes 'Just'.
 waitForHttp :: AppState -> IO HttpState
