@@ -24,6 +24,8 @@ pkgs.mkShell {
       ps.bytestring
       ps.time
       ps.aeson
+      ps.beam-core
+      ps.beam-sqlite
     ]))
     pkgs.cabal-install
   ];
