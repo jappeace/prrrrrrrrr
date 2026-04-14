@@ -16,8 +16,8 @@ module GymTracker.Sync
   )
 where
 
-import Control.Concurrent (forkIO, threadDelay)
-import Control.Concurrent.Async (withAsync, wait)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (async)
 import Control.Concurrent.MVar (tryTakeMVar, putMVar)
 import Control.Exception (SomeException, catch, finally)
 import Data.IORef (readIORef, writeIORef)
@@ -58,24 +58,21 @@ recordsClient :: Text -> NativeClientM FullState
 _healthClient :<|> syncClient :<|> recordsClient =
   clientIn (Proxy @ServerApi) (Proxy @NativeClientM)
 
--- | Trigger a sync in a background thread.
--- Uses 'forkIO' so the caller (lifecycle handler) is never blocked —
--- blocking the Android main thread would deadlock because 'HttpState'
--- is only set during render. Inside the forked thread, 'withAsync'
--- provides structured concurrency: if the thread is killed, the sync
--- operation is properly cancelled. An 'MVar' lock ensures only one
--- sync runs at a time.
+-- | Trigger a sync in an unbounded background thread.
+-- Must not block the caller — 'triggerSync' is called from the Android
+-- Resume lifecycle handler which runs on the main thread. Blocking it
+-- would deadlock: 'HttpState' is only set during render, and render
+-- cannot proceed while the main thread is blocked.
+-- An 'MVar' lock ensures only one sync runs at a time.
 triggerSync :: AppState -> IO ()
 triggerSync appState = do
   acquired <- tryTakeMVar (stSyncLock appState)
   case acquired of
     Nothing -> platformLog "Sync skipped: already in progress"
     Just () -> do
-      _ <- forkIO $
-        (withAsync
-          (do httpState <- waitForHttp appState
-              syncAction appState httpState)
-          (\syncThread -> wait syncThread))
+      _ <- async $
+        (do httpState <- waitForHttp appState
+            syncAction appState httpState)
           `catch` (\(exc :: SomeException) ->
             platformLog ("Sync error: " <> pack (show exc)))
           `finally` putMVar (stSyncLock appState) ()
