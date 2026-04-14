@@ -70,7 +70,7 @@ triggerSync appState = do
       (withAsync
         (do httpState <- waitForHttp appState
             syncAction appState httpState)
-        wait)
+        (\syncThread -> wait syncThread))
         `catch` (\(exc :: SomeException) ->
           platformLog ("Sync error: " <> pack (show exc)))
         `finally` putMVar (stSyncLock appState) ()
