@@ -9,9 +9,12 @@ module Main where
 import Foreign.Ptr (Ptr)
 import Hatter (startMobileApp, platformLog)
 import Hatter.AppContext (AppContext)
-import Hatter.App (mobileApp)
+import Hatter.App (mobileApp, globalState)
+import GymTracker.Sync (triggerSync)
 
 main :: IO (Ptr AppContext)
 main = do
   platformLog "prrrrrrrrr app registered"
-  startMobileApp mobileApp
+  appCtxPtr <- startMobileApp mobileApp
+  triggerSync globalState
+  pure appCtxPtr

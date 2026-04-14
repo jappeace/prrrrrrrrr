@@ -26,7 +26,6 @@ data AppState = AppState
   , stInputText       :: IORef Text
   , stHistory         :: IORef [(Double, Text, Maybe Text)]  -- ^ weight + timestamp + notes, newest first
   , stHttpState       :: IORef (Maybe HttpState)
-  , stNeedsSyncOnBoot :: IORef Bool
   , stPercentage      :: IORef Word
     -- ^ Percentage of 1RM to calculate (0 = disabled).
   , stConfetti        :: IORef Bool
@@ -43,7 +42,6 @@ newAppState initialRecords = do
   inputText       <- newIORef ""
   history         <- newIORef []
   httpState       <- newIORef Nothing
-  needsSyncOnBoot <- newIORef True
   percentage      <- newIORef 0
   confetti        <- newIORef False
   notesInput      <- newIORef ""
@@ -53,7 +51,6 @@ newAppState initialRecords = do
     , stInputText       = inputText
     , stHistory         = history
     , stHttpState       = httpState
-    , stNeedsSyncOnBoot = needsSyncOnBoot
     , stPercentage      = percentage
     , stConfetti        = confetti
     , stNotesInput      = notesInput
