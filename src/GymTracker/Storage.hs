@@ -80,10 +80,6 @@ import Foreign.C.String (CString, peekCString)
 import GHC.Generics (Generic)
 import GymTracker.Model (Exercise(..), exerciseName, parseExercise)
 
-------------------------------------------------------------------------
--- Beam table definitions
-------------------------------------------------------------------------
-
 -- | pr_record table: stores current PR for each exercise.
 data PrRecordT f = PrRecord
   { prExercise :: Columnar f Text
@@ -164,10 +160,6 @@ prDb = defaultDbSettings `withDbModification` PrDb
         }
   }
 
-------------------------------------------------------------------------
--- Connection management
-------------------------------------------------------------------------
-
 foreign import ccall "get_app_files_dir"
   c_get_app_files_dir :: IO CString
 
@@ -197,10 +189,6 @@ initDB conn = do
     \recorded_at TEXT NOT NULL, notes TEXT)"
   SQLite.execute_ conn "CREATE TABLE IF NOT EXISTS sync_meta \
     \(key TEXT UNIQUE NOT NULL, value TEXT NOT NULL)"
-
-------------------------------------------------------------------------
--- Queries
-------------------------------------------------------------------------
 
 -- | Load all PR records from the database.
 loadRecords :: Connection -> IO (Map Exercise Double)
