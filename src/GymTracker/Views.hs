@@ -32,6 +32,7 @@ import GymTracker.Sync (triggerSync)
 import Hatter (Action, OnChange, ActionM, createAction, createOnChange)
 import Hatter.Widget
   ( AnimatedConfig(..)
+  , item
   , ButtonConfig(..)
   , Color(..)
   , Easing(..)
@@ -203,7 +204,7 @@ enterPRView actions st ex = do
   confetti <- if showConfetti
     then fmap (: []) confettiOverlay
     else pure []
-  pure $ Column (LayoutSettings [Stack [column confetti, column formWidgets]] True)
+  pure $ scrollColumn [Stack $ item <$> [column confetti, column formWidgets]]
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
