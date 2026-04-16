@@ -203,7 +203,7 @@ enterPRView actions st ex = do
   confetti <- if showConfetti
     then fmap (: []) confettiOverlay
     else pure []
-  pure $ column $ confetti ++ formWidgets
+  pure $ Column (LayoutSettings [Stack [column confetti, column formWidgets]] True)
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
