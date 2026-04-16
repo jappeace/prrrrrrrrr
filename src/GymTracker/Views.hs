@@ -36,7 +36,6 @@ import Hatter.Widget
   , Color(..)
   , Easing(..)
   , InputType(..)
-  , LayoutSettings(..)
   , TextAlignment(..)
   , TextConfig(..)
   , TextInputConfig(..)
@@ -44,6 +43,7 @@ import Hatter.Widget
   , WidgetStyle(..)
   , column
   , row
+  , scrollColumn
   , defaultStyle
   )
 
@@ -137,7 +137,7 @@ exerciseListView actions st = do
       children = Styled centeredText (Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing })
           : percentageRow
           : concatMap categorySection allCategories
-  pure $ Column (LayoutSettings children True)
+  pure $ scrollColumn children
 
 -- | A single exercise button, optionally followed by a calculated percentage text.
 -- Returns one widget (button only) when percentage is 0 or the exercise has no PR,
