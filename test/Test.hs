@@ -29,7 +29,7 @@ import GymTracker.Storage
   , queryHistoryByExerciseAndTime, insertHistory
   )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
-import Hatter.Widget (AnimatedConfig(..), Easing(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
+import Hatter.Widget (AnimatedConfig(..), Easing(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
 
 import Data.ByteString qualified as BS
@@ -182,6 +182,10 @@ storageTests = sequentialTestGroup "Storage" AllFinish
           notes @?= Just "belt used"
   ]
 
+-- | Extract the widget list from a LayoutSettings, unwrapping LayoutItems.
+layoutWidgets :: LayoutSettings -> [Widget]
+layoutWidgets = map liWidget . lsWidgets
+
 -- | Create a test AppState + AppActions pair.
 mkTestActions :: IO (AppState, AppActions)
 mkTestActions = do
@@ -196,9 +200,9 @@ viewTests = testGroup "Views"
       (st, actions) <- mkTestActions
       widget <- exerciseListView actions st
       case widget of
-        Column (LayoutSettings children True) ->
+        Column settings@LayoutSettings { lsScrollable = True } ->
           -- 1 title + 1 percentage input + 5 category headers + 12 exercise buttons = 19
-          length children @?= 19
+          length (layoutWidgets settings) @?= 19
         Column _ -> assertFailure "expected scrollable Column"
         _        -> assertFailure "expected Column"
 
@@ -206,24 +210,22 @@ viewTests = testGroup "Views"
       (st, actions) <- mkTestActions
       widget <- exerciseListView actions st
       case widget of
-        Column (LayoutSettings (_ : _ : thirdChild : _) True) ->
-          case thirdChild of
-            Styled style (Text config) -> do
+        Column settings@LayoutSettings { lsScrollable = True } ->
+          case drop 2 (layoutWidgets settings) of
+            (Styled style (Text config) : _) -> do
               tcLabel config @?= categoryName Snatches
               wsTextAlign style @?= Just AlignCenter
-            Styled _ _  -> assertFailure "expected Styled wrapping Text"
-            Text _      -> assertFailure "expected Styled Text, got bare Text"
-            _           -> assertFailure "expected Styled Text for category header"
-        Column _ -> assertFailure "expected at least 3 children in scrollable Column"
+            _ -> assertFailure "expected Styled Text for category header as third child"
+        Column _ -> assertFailure "expected scrollable Column"
         _        -> assertFailure "expected Column"
 
   , testCase "enterPRView returns Column with input, buttons, and history section" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings children False) ->
+        Column settings@LayoutSettings { lsScrollable = False } ->
           -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
-          length children @?= 6
+          length (layoutWidgets settings) @?= 6
         Text _          -> assertFailure "expected Column, got Text"
         Button _        -> assertFailure "expected Column, got Button"
         TextInput _     -> assertFailure "expected Column, got TextInput"
@@ -241,17 +243,21 @@ viewTests = testGroup "Views"
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00", Nothing), (90.0, "2025-12-01 10:00:00", Nothing)]
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings [_, _, _, _, _, Column (LayoutSettings historyWidgets False)] False) ->
-          length historyWidgets @?= 2
-        Column _ -> assertFailure "expected 6 children with history Column as 6th"
+        Column settings@LayoutSettings { lsScrollable = False } ->
+          case drop 5 (layoutWidgets settings) of
+            (Column innerSettings@LayoutSettings { lsScrollable = False } : _) ->
+              length (layoutWidgets innerSettings) @?= 2
+            _ -> assertFailure "expected 6 children with history Column as 6th"
         _        -> assertFailure "expected Column"
 
   , testCase "appRootView dispatches to correct screen" $ do
       (st, actions) <- mkTestActions
       widget <- appRootView actions st
       case widget of
-        Styled _ (Column (LayoutSettings (Styled _ (Text config) : _) True)) ->
-          tcLabel config @?= "PRRRRRRRRR"
+        Styled _ (Column settings@LayoutSettings { lsScrollable = True }) ->
+          case layoutWidgets settings of
+            (Styled _ (Text config) : _) -> tcLabel config @?= "PRRRRRRRRR"
+            _ -> assertFailure "expected first child to be Styled Text"
         Styled _ (Column _) -> assertFailure "expected scrollable Column with children"
         Styled _ _          -> assertFailure "expected Styled wrapping scrollable Column"
         _                   -> assertFailure "expected Styled"
@@ -286,11 +292,11 @@ percentageTests = testGroup "Percentage calculator"
       actions <- runActionM actionSt (createAppActions st)
       widget <- exerciseListView actions st
       case widget of
-        Column (LayoutSettings children True) ->
+        Column settings@LayoutSettings { lsScrollable = True } ->
           -- 1 title + 1 percentage input + 5 category headers
           -- + 12 exercise buttons + 2 percentage text rows (Snatch + Deadlift have PRs)
           -- = 21
-          length children @?= 21
+          length (layoutWidgets settings) @?= 21
         Column _ -> assertFailure "expected scrollable Column"
         _        -> assertFailure "expected Column"
 
@@ -301,10 +307,10 @@ percentageTests = testGroup "Percentage calculator"
       actions <- runActionM actionSt (createAppActions st)
       widget <- exerciseListView actions st
       case widget of
-        Column (LayoutSettings children True) ->
+        Column settings@LayoutSettings { lsScrollable = True } ->
           -- Find the percentage text row after the Snatch button
           -- Layout: title, %input, "Snatches" header, Snatch button, percentage text, ...
-          case drop 3 children of  -- skip title, %input, Snatches header
+          case drop 3 (layoutWidgets settings) of  -- skip title, %input, Snatches header
             (_button : Styled _style (Text config) : _) ->
               tcLabel config @?= "64.0 kg @ 80%"
             _ -> assertFailure "expected button followed by percentage text"
@@ -318,7 +324,7 @@ confettiTests = testGroup "Confetti"
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings children False) -> length children @?= 6
+        Column settings@LayoutSettings { lsScrollable = False } -> length (layoutWidgets settings) @?= 6
         Column _  -> assertFailure "expected non-scrollable Column"
         _         -> assertFailure "expected Column"
 
@@ -327,7 +333,7 @@ confettiTests = testGroup "Confetti"
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings children False) -> length children @?= 7
+        Column settings@LayoutSettings { lsScrollable = False } -> length (layoutWidgets settings) @?= 7
         Column _  -> assertFailure "expected non-scrollable Column"
         _         -> assertFailure "expected Column"
 
@@ -336,16 +342,19 @@ confettiTests = testGroup "Confetti"
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings (Animated config _ : _) False) -> do
-          anDuration config @?= 1200
-          anEasing config @?= EaseOut
-        Column _ -> assertFailure "expected first child to be Animated in non-scrollable Column"
+        Column settings@LayoutSettings { lsScrollable = False } ->
+          case layoutWidgets settings of
+            (Animated config _ : _) -> do
+              anDuration config @?= 1200
+              anEasing config @?= EaseOut
+            _ -> assertFailure "expected first child to be Animated"
+        Column _ -> assertFailure "expected non-scrollable Column"
         _        -> assertFailure "expected Column"
 
   , testCase "confettiOverlay contains 20 particles in a Column" $ do
       widget <- confettiOverlay
       case widget of
-        Animated _ (Column (LayoutSettings particles False)) -> length particles @?= 20
+        Animated _ (Column settings@LayoutSettings { lsScrollable = False }) -> length (layoutWidgets settings) @?= 20
         Animated _ _  -> assertFailure "expected Column inside Animated"
         _             -> assertFailure "expected Animated"
   ]
