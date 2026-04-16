@@ -7,31 +7,38 @@ import Data.Text (pack)
 import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
-import GymTracker.Views (AppActions, appRootView, createAppActions)
-import Hatter (ActionState, newActionState, runActionM)
+import GymTracker.Views (appRootView, createAppActions)
+import Hatter (newActionState, runActionM)
 import Hatter.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
 import Hatter.Types (MobileApp(..), UserState(..))
-import System.IO.Unsafe (unsafePerformIO)
 
--- | The gym PR tracker mobile app.
-mobileApp :: MobileApp
-mobileApp = MobileApp
-  { maContext = syncMobileContext
-  , maView = \userState -> do
-      -- Capture HttpState from the framework on every render.
-      writeIORef (stHttpState globalState) (Just (userHttpState userState))
-      appRootView globalAppActions globalState
-  , maActionState = globalActionState
-  }
+-- | Build the gym PR tracker mobile app.
+-- Initialises the database, loads records, and wires up state via closures
+-- instead of top-level unsafePerformIO globals.
+mobileApp :: IO MobileApp
+mobileApp = do
+  actionState <- newActionState
+  appState <- withDatabase $ \conn -> do
+    initDB conn
+    records <- loadRecords conn
+    newAppState records
+  appActions <- runActionM actionState (createAppActions appState)
+  pure MobileApp
+    { maContext     = syncMobileContext appState
+    , maView        = \userState -> do
+        writeIORef (stHttpState appState) (Just (userHttpState userState))
+        appRootView appActions appState
+    , maActionState = actionState
+    }
 
 -- | MobileContext that logs lifecycle events and triggers sync on Resume.
-syncMobileContext :: MobileContext
-syncMobileContext = MobileContext
+syncMobileContext :: AppState -> MobileContext
+syncMobileContext appState = MobileContext
   { onLifecycle = \event -> do
       platformLog ("Lifecycle: " <> pack (show event))
       case event of
         Create    -> pure ()
-        Resume    -> triggerSync globalState
+        Resume    -> triggerSync appState
         Start     -> pure ()
         Pause     -> pure ()
         Stop      -> pure ()
@@ -39,24 +46,3 @@ syncMobileContext = MobileContext
         LowMemory -> pure ()
   , onError = \exc -> platformLog ("Error: " <> pack (show exc))
   }
-
--- | Global application state, initialized once on first access.
--- Opens the SQLite database, creates the table, and loads existing records.
-globalState :: AppState
-globalState = unsafePerformIO $ do
-  records <- withDatabase $ \conn -> do
-    initDB conn
-    loadRecords conn
-  newAppState records
-{-# NOINLINE globalState #-}
-
--- | Global action state for callback handle registration.
-globalActionState :: ActionState
-globalActionState = unsafePerformIO newActionState
-{-# NOINLINE globalActionState #-}
-
--- | Pre-created callback handles for the entire UI.
-globalAppActions :: AppActions
-globalAppActions = unsafePerformIO $
-  runActionM globalActionState (createAppActions globalState)
-{-# NOINLINE globalAppActions #-}
