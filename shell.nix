@@ -26,6 +26,7 @@ pkgs.mkShell {
       ps.aeson
       ps.beam-core
       ps.beam-sqlite
+      ps.async
     ]))
     pkgs.cabal-install
   ];
