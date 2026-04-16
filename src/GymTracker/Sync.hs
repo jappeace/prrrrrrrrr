@@ -9,14 +9,15 @@
 -- requests through the platform's native HTTP stack, avoiding the
 -- ~90 MB of TLS\/crypto C dependencies that @http-client-tls@ brings.
 --
--- Runs asynchronously via 'forkIO' so it never blocks the UI.
+-- Runs asynchronously via 'async' so it never blocks the UI.
 -- Network errors are caught and logged — the app remains fully offline-capable.
 module GymTracker.Sync
   ( triggerSync
   )
 where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (async)
 import Control.Concurrent.MVar (tryTakeMVar, putMVar)
 import Control.Exception (SomeException, catch, finally)
 import Data.IORef (readIORef, writeIORef)
@@ -69,7 +70,7 @@ triggerSync appState = do
   case acquired of
     Nothing -> platformLog "Sync skipped: already in progress"
     Just () -> do
-      _ <- forkIO $
+      _ <- async $
         (do httpState <- waitForHttp appState
             syncAction appState httpState)
           `catch` (\(exc :: SomeException) ->

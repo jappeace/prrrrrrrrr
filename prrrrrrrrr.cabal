@@ -74,6 +74,7 @@ library
   build-depends:
       hatter,
       pr-sync-api,
+      async,
       text,
       containers,
       sqlite-simple,
