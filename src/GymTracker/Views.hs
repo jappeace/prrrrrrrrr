@@ -203,7 +203,12 @@ enterPRView actions st ex = do
   confetti <- if showConfetti
     then fmap (: []) confettiOverlay
     else pure []
-  pure $ column $ confetti ++ formWidgets
+  -- Confetti is appended (not prepended) so the form widgets keep their
+  -- position indices across renders.  Prepending would shift every child
+  -- by one, causing the diff algorithm to mismatch TextInput nodes and
+  -- destroy the focused weight EditText — Android then transfers focus
+  -- to the notes field, scrolling wearOS to the wrong section.
+  pure $ column $ formWidgets ++ confetti
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget

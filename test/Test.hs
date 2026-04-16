@@ -322,7 +322,7 @@ confettiTests = testGroup "Confetti"
         Column _  -> assertFailure "expected non-scrollable Column"
         _         -> assertFailure "expected Column"
 
-  , testCase "enterPRView with confetti has 7 children (overlay + 6 form)" $ do
+  , testCase "enterPRView with confetti has 7 children (6 form + overlay)" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
@@ -331,15 +331,17 @@ confettiTests = testGroup "Confetti"
         Column _  -> assertFailure "expected non-scrollable Column"
         _         -> assertFailure "expected Column"
 
-  , testCase "enterPRView confetti first child is Animated" $ do
+  , testCase "enterPRView confetti last child is Animated" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case widget of
-        Column (LayoutSettings (Animated config _ : _) False) -> do
-          anDuration config @?= 1200
-          anEasing config @?= EaseOut
-        Column _ -> assertFailure "expected first child to be Animated in non-scrollable Column"
+        Column (LayoutSettings children False) -> case last children of
+          Animated config _ -> do
+            anDuration config @?= 1200
+            anEasing config @?= EaseOut
+          _ -> assertFailure "expected last child to be Animated"
+        Column _ -> assertFailure "expected non-scrollable Column"
         _        -> assertFailure "expected Column"
 
   , testCase "confettiOverlay contains 20 particles in a Column" $ do
