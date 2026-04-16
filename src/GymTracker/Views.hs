@@ -36,11 +36,14 @@ import Hatter.Widget
   , Color(..)
   , Easing(..)
   , InputType(..)
+  , LayoutSettings(..)
   , TextAlignment(..)
   , TextConfig(..)
   , TextInputConfig(..)
   , Widget(..)
   , WidgetStyle(..)
+  , column
+  , row
   , defaultStyle
   )
 
@@ -134,7 +137,7 @@ exerciseListView actions st = do
       children = Styled centeredText (Text TextConfig { tcLabel = "PRRRRRRRRR", tcFontConfig = Nothing })
           : percentageRow
           : concatMap categorySection allCategories
-  pure $ ScrollView [Column children]
+  pure $ Column (LayoutSettings children True)
 
 -- | A single exercise button, optionally followed by a calculated percentage text.
 -- Returns one widget (button only) when percentage is 0 or the exercise has no PR,
@@ -186,7 +189,7 @@ enterPRView actions st ex = do
             , tiFontConfig = Nothing
             , tiAutoFocus  = False
             }
-        , Row
+        , row
             [ Button ButtonConfig
                 { bcLabel = "Save"
                 , bcAction = Map.findWithDefault (aaBackButton actions) ex (aaSaveButtons actions)
@@ -195,12 +198,12 @@ enterPRView actions st ex = do
             , Button ButtonConfig
                 { bcLabel = "Back", bcAction = aaBackButton actions, bcFontConfig = Nothing }
             ]
-        , Column historyWidgets
+        , column historyWidgets
         ]
   confetti <- if showConfetti
     then fmap (: []) confettiOverlay
     else pure []
-  pure $ Column $ confetti ++ formWidgets
+  pure $ column $ confetti ++ formWidgets
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
@@ -221,7 +224,7 @@ confettiOverlay = do
       -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
       triples = takeTriples particleCount randoms
       particles = map mkParticle triples
-  pure $ Animated (AnimatedConfig 1200 EaseOut) $ Column particles
+  pure $ Animated (AnimatedConfig 1200 EaseOut) $ column particles
   where
     particleCount :: Int
     particleCount = 20
