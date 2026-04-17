@@ -2,38 +2,33 @@
 -- | App registration for the gym PR tracker.
 module Hatter.App (mobileApp) where
 
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (writeIORef)
 import Data.Text (pack)
 import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
-import GymTracker.Views (AppActions, appRootView, createAppActions)
-import Hatter (ActionState, newActionState, runActionM)
+import GymTracker.Views (appRootView, createAppActions)
+import Hatter (newActionState, runActionM)
 import Hatter.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
 import Hatter.Types (MobileApp(..), UserState(..))
 
 -- | Build the gym PR tracker mobile app.
--- The action state is created eagerly, but database initialisation is
--- deferred to the first render because 'ActivityThread.currentApplication()'
--- can return null during JNI_OnLoad in the CI emulator, leaving the files
--- directory unset. On real devices the JNI bridge sets it up before main.
+-- Platform context (files directory, locale) is available when this
+-- runs — hatter's JNI bridge sets it up in JNI_OnLoad before main.
 mobileApp :: IO MobileApp
 mobileApp = do
   actionState <- newActionState
-  lazyState <- newIORef Nothing
-  let initialise :: IO (AppState, AppActions)
-      initialise = ensureInitialised actionState lazyState
+  appState <- withDatabase $ \conn -> do
+    initDB conn
+    loadRecords conn >>= newAppState
+  appActions <- runActionM actionState (createAppActions appState)
   pure MobileApp
     { maContext = MobileContext
         { onLifecycle = \event -> do
             platformLog ("Lifecycle: " <> pack (show event))
             case event of
               Create    -> pure ()
-              Resume    -> do
-                cached <- readIORef lazyState
-                case cached of
-                  Just (appState, _) -> triggerSync appState
-                  Nothing            -> pure ()
+              Resume    -> triggerSync appState
               Start     -> pure ()
               Pause     -> pure ()
               Stop      -> pure ()
@@ -42,25 +37,7 @@ mobileApp = do
         , onError = \exc -> platformLog ("Error: " <> pack (show exc))
         }
     , maView = \userState -> do
-        (appState, appActions) <- initialise
         writeIORef (stHttpState appState) (Just (userHttpState userState))
         appRootView appActions appState
     , maActionState = actionState
     }
-
--- | Initialise database state on first access, returning the cached
--- pair on subsequent calls.
-ensureInitialised :: ActionState -> IORef (Maybe (AppState, AppActions)) -> IO (AppState, AppActions)
-ensureInitialised actionState ref = do
-  cached <- readIORef ref
-  case cached of
-    Just pair -> pure pair
-    Nothing -> do
-      appState <- withDatabase $ \conn -> do
-        initDB conn
-        records <- loadRecords conn
-        newAppState records
-      appActions <- runActionM actionState (createAppActions appState)
-      let pair = (appState, appActions)
-      writeIORef ref (Just pair)
-      pure pair
