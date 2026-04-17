@@ -47,11 +47,6 @@ lib.mkAndroidLib {
   inherit hatterSrc mainModule crossDeps;
   pname = "prrrrrrrrr-android";
   javaPackageName = "me.jappie.prrrrrrrrr";
-  extraJniBridge = [ ../cbits/jni_extras.c ];
-  extraNdkCompile = ndkCc: sysroot: ''
-    ${ndkCc} -c -fPIC -I${sysroot}/usr/include \
-      -o storage_helper.o ${../cbits/storage_helper.c}
-  '';
   extraModuleCopy = ''
     mkdir -p GymTracker Hatter
     cp ${../src/Hatter/App.hs} Hatter/App.hs
@@ -63,6 +58,4 @@ lib.mkAndroidLib {
     cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs
     cp ${../src/GymTracker/Views.hs} GymTracker/Views.hs
   '';
-  extraLinkObjects = [ "$(pwd)/storage_helper.o" ];
-  extraGhcIncludeDirs = [ ../cbits ];
 }

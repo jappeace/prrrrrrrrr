@@ -7,7 +7,7 @@
 -- | SQLite-backed storage for PR records.
 --
 -- Uses beam-sqlite for type-safe queries on top of sqlite-simple.
--- The database is stored at @get_app_files_dir() ++ "/prrrrrrrrr.db"@.
+-- The database is stored at @getAppFilesDir ++ "/prrrrrrrrr.db"@.
 module GymTracker.Storage
   ( withDatabase
   , initDB
@@ -76,9 +76,9 @@ import Database.Beam.Backend.SQL.BeamExtensions
 import Database.Beam.Sqlite (Sqlite, runBeamSqlite)
 import Database.SQLite.Simple (Connection)
 import Database.SQLite.Simple qualified as SQLite
-import Foreign.C.String (CString, peekCString)
 import GHC.Generics (Generic)
 import GymTracker.Model (Exercise(..), exerciseName, parseExercise)
+import Hatter.FilesDir (getAppFilesDir)
 
 -- | pr_record table: stores current PR for each exercise.
 data PrRecordT f = PrRecord
@@ -160,13 +160,10 @@ prDb = defaultDbSettings `withDbModification` PrDb
         }
   }
 
-foreign import ccall "get_app_files_dir"
-  c_get_app_files_dir :: IO CString
-
 -- | Get the database file path.
 getDbPath :: IO FilePath
 getDbPath = do
-  dir <- c_get_app_files_dir >>= peekCString
+  dir <- getAppFilesDir
   pure (dir ++ "/prrrrrrrrr.db")
 
 -- | Open the database, run an action with the connection, then close it.

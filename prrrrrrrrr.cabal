@@ -89,10 +89,6 @@ library
       bytestring,
       time,
       random
-  c-sources:
-      cbits/storage_helper.c
-  include-dirs:
-      cbits
 
 test-suite unit
   import: common-options

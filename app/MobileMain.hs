@@ -14,4 +14,5 @@ import Hatter.App (mobileApp)
 main :: IO (Ptr AppContext)
 main = do
   platformLog "prrrrrrrrr app registered"
-  startMobileApp mobileApp
+  app <- mobileApp
+  startMobileApp app

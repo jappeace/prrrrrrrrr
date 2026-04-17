@@ -186,6 +186,19 @@ storageTests = sequentialTestGroup "Storage" AllFinish
 layoutWidgets :: LayoutSettings -> [Widget]
 layoutWidgets = map liWidget . lsWidgets
 
+-- | Unwrap the enterPRView structure: scrollable Column > Stack > [confetti layer, form layer].
+-- Returns (confettiWidgets, formWidgets).
+unwrapEnterPRStack :: Widget -> Either String ([Widget], [Widget])
+unwrapEnterPRStack (Column settings) | lsScrollable settings =
+  case layoutWidgets settings of
+    [Stack stackItems] ->
+      case map liWidget stackItems of
+        [Column confettiSettings, Column formSettings] ->
+          Right (layoutWidgets confettiSettings, layoutWidgets formSettings)
+        _ -> Left "expected Stack with two Column layers"
+    _ -> Left "expected single Stack child in scroll column"
+unwrapEnterPRStack _ = Left "expected scrollable Column wrapping a Stack"
+
 -- | Create a test AppState + AppActions pair.
 mkTestActions :: IO (AppState, AppActions)
 mkTestActions = do
@@ -222,33 +235,23 @@ viewTests = testGroup "Views"
   , testCase "enterPRView returns Column with input, buttons, and history section" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
-      case widget of
-        Column settings@LayoutSettings { lsScrollable = False } ->
+      case unwrapEnterPRStack widget of
+        Right (_confetti, formWidgets) ->
           -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
-          length (layoutWidgets settings) @?= 6
-        Text _          -> assertFailure "expected Column, got Text"
-        Button _        -> assertFailure "expected Column, got Button"
-        TextInput _     -> assertFailure "expected Column, got TextInput"
-        Row _           -> assertFailure "expected Column, got Row"
-        Image _         -> assertFailure "expected Column, got Image"
-        WebView _       -> assertFailure "expected Column, got WebView"
-        MapView _       -> assertFailure "expected Column, got MapView"
-        Styled _ _      -> assertFailure "expected Column, got Styled"
-        Animated _ _    -> assertFailure "expected Column, got Animated"
-        Column _        -> assertFailure "expected non-scrollable Column"
-        Stack _         -> assertFailure "expected Column, got Stack"
+          length formWidgets @?= 6
+        Left err -> assertFailure err
 
   , testCase "enterPRView with history shows entries in 6th Column child" $ do
       (st, actions) <- mkTestActions
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00", Nothing), (90.0, "2025-12-01 10:00:00", Nothing)]
       widget <- enterPRView actions st Snatch
-      case widget of
-        Column settings@LayoutSettings { lsScrollable = False } ->
-          case drop 5 (layoutWidgets settings) of
+      case unwrapEnterPRStack widget of
+        Right (_confetti, formWidgets) ->
+          case drop 5 formWidgets of
             (Column innerSettings@LayoutSettings { lsScrollable = False } : _) ->
               length (layoutWidgets innerSettings) @?= 2
             _ -> assertFailure "expected 6 children with history Column as 6th"
-        _        -> assertFailure "expected Column"
+        Left err -> assertFailure err
 
   , testCase "appRootView dispatches to correct screen" $ do
       (st, actions) <- mkTestActions
@@ -320,36 +323,37 @@ percentageTests = testGroup "Percentage calculator"
 
 confettiTests :: TestTree
 confettiTests = testGroup "Confetti"
-  [ testCase "enterPRView without confetti has 6 children" $ do
+  [ testCase "enterPRView without confetti has 6 form children and empty confetti layer" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
-      case widget of
-        Column settings@LayoutSettings { lsScrollable = False } -> length (layoutWidgets settings) @?= 6
-        Column _  -> assertFailure "expected non-scrollable Column"
-        _         -> assertFailure "expected Column"
+      case unwrapEnterPRStack widget of
+        Right (confettiWidgets, formWidgets) -> do
+          length confettiWidgets @?= 0
+          length formWidgets @?= 6
+        Left err -> assertFailure err
 
-  , testCase "enterPRView with confetti has 7 children (overlay + 6 form)" $ do
+  , testCase "enterPRView with confetti has overlay and 6 form children" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
-      case widget of
-        Column settings@LayoutSettings { lsScrollable = False } -> length (layoutWidgets settings) @?= 7
-        Column _  -> assertFailure "expected non-scrollable Column"
-        _         -> assertFailure "expected Column"
+      case unwrapEnterPRStack widget of
+        Right (confettiWidgets, formWidgets) -> do
+          length confettiWidgets @?= 1
+          length formWidgets @?= 6
+        Left err -> assertFailure err
 
-  , testCase "enterPRView confetti first child is Animated" $ do
+  , testCase "enterPRView confetti layer first child is Animated" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
-      case widget of
-        Column settings@LayoutSettings { lsScrollable = False } ->
-          case layoutWidgets settings of
+      case unwrapEnterPRStack widget of
+        Right (confettiWidgets, _formWidgets) ->
+          case confettiWidgets of
             (Animated config _ : _) -> do
               anDuration config @?= 1200
               anEasing config @?= EaseOut
             _ -> assertFailure "expected first child to be Animated"
-        Column _ -> assertFailure "expected non-scrollable Column"
-        _        -> assertFailure "expected Column"
+        Left err -> assertFailure err
 
   , testCase "confettiOverlay contains 20 particles in a Column" $ do
       widget <- confettiOverlay
