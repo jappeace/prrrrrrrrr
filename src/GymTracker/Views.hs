@@ -72,7 +72,7 @@ createAppActions st = do
   exerciseButtons <- fmap Map.fromList $ mapM mkExerciseAction allExercises
   saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
   back            <- createAction $ do
-    writeIORef (stConfetti st) False
+    writeIORef (stConfetti st) Nothing
     writeIORef (stScreen st) ExerciseList
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
   percentageInput <- createOnChange (\t ->
@@ -92,7 +92,7 @@ createAppActions st = do
       action <- createAction $ do
         history <- withDatabase $ \conn -> loadExerciseHistory conn ex
         writeIORef (stHistory st) history
-        writeIORef (stConfetti st) False
+        writeIORef (stConfetti st) Nothing
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
         writeIORef (stNotesInput st) ""
@@ -169,7 +169,7 @@ enterPRView actions st ex = do
   inputVal    <- readIORef (stInputText st)
   notesVal    <- readIORef (stNotesInput st)
   history     <- readIORef (stHistory st)
-  showConfetti <- readIORef (stConfetti st)
+  maybeConfetti <- readIORef (stConfetti st)
   let historyWidgets = map historyEntry history
       formWidgets =
         [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
@@ -201,9 +201,9 @@ enterPRView actions st ex = do
             ]
         , column historyWidgets
         ]
-  confetti <- if showConfetti
-    then fmap (: []) confettiOverlay
-    else pure []
+  let confetti = case maybeConfetti of
+        Just overlay -> [overlay]
+        Nothing      -> []
   pure $ scrollColumn [Stack $ item <$> [column confetti, column formWidgets]]
 
 -- | Render a single history entry, optionally showing notes.
@@ -274,7 +274,8 @@ savePR st ex = do
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
       writeIORef (stNotesInput st) ""
-      writeIORef (stConfetti st) True
+      confettiWidget <- confettiOverlay
+      writeIORef (stConfetti st) (Just confettiWidget)
       triggerSync st
     Nothing -> pure ()
   where

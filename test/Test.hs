@@ -334,7 +334,8 @@ confettiTests = testGroup "Confetti"
 
   , testCase "enterPRView with confetti has overlay and 6 form children" $ do
       (st, actions) <- mkTestActions
-      writeIORef (stConfetti st) True
+      confettiWidget <- confettiOverlay
+      writeIORef (stConfetti st) (Just confettiWidget)
       widget <- enterPRView actions st Snatch
       case unwrapEnterPRStack widget of
         Right (confettiWidgets, formWidgets) -> do
@@ -344,7 +345,8 @@ confettiTests = testGroup "Confetti"
 
   , testCase "enterPRView confetti layer first child is Animated" $ do
       (st, actions) <- mkTestActions
-      writeIORef (stConfetti st) True
+      confettiWidget <- confettiOverlay
+      writeIORef (stConfetti st) (Just confettiWidget)
       widget <- enterPRView actions st Snatch
       case unwrapEnterPRStack widget of
         Right (confettiWidgets, _formWidgets) ->
