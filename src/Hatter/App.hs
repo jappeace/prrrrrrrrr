@@ -2,47 +2,64 @@
 -- | App registration for the gym PR tracker.
 module Hatter.App (mobileApp) where
 
-import Data.IORef (writeIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Text (pack)
 import GymTracker.AppState (AppState(..), newAppState)
 import GymTracker.Storage (withDatabase, initDB, loadRecords)
 import GymTracker.Sync (triggerSync)
-import GymTracker.Views (appRootView, createAppActions)
-import Hatter (newActionState, runActionM)
+import GymTracker.Views (AppActions, appRootView, createAppActions)
+import Hatter (ActionState, newActionState, runActionM)
 import Hatter.Lifecycle (MobileContext(..), LifecycleEvent(..), platformLog)
 import Hatter.Types (MobileApp(..), UserState(..))
 
 -- | Build the gym PR tracker mobile app.
--- Initialises the database, loads records, and wires up state via closures
--- instead of top-level unsafePerformIO globals.
+-- The action state is created eagerly, but database initialisation is
+-- deferred to the first render — the Android files directory is only
+-- available after 'startMobileApp' sets up the platform context.
 mobileApp :: IO MobileApp
 mobileApp = do
   actionState <- newActionState
-  appState <- withDatabase $ \conn -> do
-    initDB conn
-    records <- loadRecords conn
-    newAppState records
-  appActions <- runActionM actionState (createAppActions appState)
+  lazyState <- newIORef Nothing
+  let initialise :: IO (AppState, AppActions)
+      initialise = ensureInitialised actionState lazyState
   pure MobileApp
-    { maContext     = syncMobileContext appState
-    , maView        = \userState -> do
+    { maContext = MobileContext
+        { onLifecycle = \event -> do
+            platformLog ("Lifecycle: " <> pack (show event))
+            case event of
+              Create    -> pure ()
+              Resume    -> do
+                cached <- readIORef lazyState
+                case cached of
+                  Just (appState, _) -> triggerSync appState
+                  Nothing            -> pure ()
+              Start     -> pure ()
+              Pause     -> pure ()
+              Stop      -> pure ()
+              Destroy   -> pure ()
+              LowMemory -> pure ()
+        , onError = \exc -> platformLog ("Error: " <> pack (show exc))
+        }
+    , maView = \userState -> do
+        (appState, appActions) <- initialise
         writeIORef (stHttpState appState) (Just (userHttpState userState))
         appRootView appActions appState
     , maActionState = actionState
     }
 
--- | MobileContext that logs lifecycle events and triggers sync on Resume.
-syncMobileContext :: AppState -> MobileContext
-syncMobileContext appState = MobileContext
-  { onLifecycle = \event -> do
-      platformLog ("Lifecycle: " <> pack (show event))
-      case event of
-        Create    -> pure ()
-        Resume    -> triggerSync appState
-        Start     -> pure ()
-        Pause     -> pure ()
-        Stop      -> pure ()
-        Destroy   -> pure ()
-        LowMemory -> pure ()
-  , onError = \exc -> platformLog ("Error: " <> pack (show exc))
-  }
+-- | Initialise database state on first access, returning the cached
+-- pair on subsequent calls.
+ensureInitialised :: ActionState -> IORef (Maybe (AppState, AppActions)) -> IO (AppState, AppActions)
+ensureInitialised actionState ref = do
+  cached <- readIORef ref
+  case cached of
+    Just pair -> pure pair
+    Nothing -> do
+      appState <- withDatabase $ \conn -> do
+        initDB conn
+        records <- loadRecords conn
+        newAppState records
+      appActions <- runActionM actionState (createAppActions appState)
+      let pair = (appState, appActions)
+      writeIORef ref (Just pair)
+      pure pair
