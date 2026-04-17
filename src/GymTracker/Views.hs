@@ -16,7 +16,7 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
-import System.Random (newStdGen, randomRs)
+import System.Random (StdGen, randomRs)
 import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
@@ -72,7 +72,7 @@ createAppActions st = do
   exerciseButtons <- fmap Map.fromList $ mapM mkExerciseAction allExercises
   saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
   back            <- createAction $ do
-    writeIORef (stConfetti st) Nothing
+    writeIORef (stConfetti st) False
     writeIORef (stScreen st) ExerciseList
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
   percentageInput <- createOnChange (\t ->
@@ -92,7 +92,7 @@ createAppActions st = do
       action <- createAction $ do
         history <- withDatabase $ \conn -> loadExerciseHistory conn ex
         writeIORef (stHistory st) history
-        writeIORef (stConfetti st) Nothing
+        writeIORef (stConfetti st) False
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
         writeIORef (stNotesInput st) ""
@@ -169,7 +169,7 @@ enterPRView actions st ex = do
   inputVal    <- readIORef (stInputText st)
   notesVal    <- readIORef (stNotesInput st)
   history     <- readIORef (stHistory st)
-  maybeConfetti <- readIORef (stConfetti st)
+  showConfetti <- readIORef (stConfetti st)
   let historyWidgets = map historyEntry history
       formWidgets =
         [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
@@ -201,9 +201,9 @@ enterPRView actions st ex = do
             ]
         , column historyWidgets
         ]
-  let confetti = case maybeConfetti of
-        Just overlay -> [overlay]
-        Nothing      -> []
+  let confetti = if showConfetti
+        then [confettiOverlay (stConfettiSeed st)]
+        else []
   pure $ scrollColumn [Stack $ item <$> [column confetti, column formWidgets]]
 
 -- | Render a single history entry, optionally showing notes.
@@ -217,15 +217,16 @@ historyEntry (weight, timestamp, notes) =
 
 -- | Confetti animation overlay — scattered animated colored particles.
 -- Shown on the EnterPR screen after saving a new personal record.
--- Uses random positions and colors so each celebration looks unique.
-confettiOverlay :: IO Widget
-confettiOverlay = do
-  gen <- newStdGen
-  let randoms = randomRs (0 :: Int, 999) gen
+-- Takes a seed generated at boot so particle positions are deterministic
+-- across re-renders (animation frames trigger renderView each vsync).
+-- See jappeace/hatter#199 for why widget trees must be deterministic.
+confettiOverlay :: StdGen -> Widget
+confettiOverlay seed =
+  let randoms = randomRs (0 :: Int, 999) seed
       -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
       triples = takeTriples particleCount randoms
       particles = map mkParticle triples
-  pure $ Animated (AnimatedConfig 1200 EaseOut) $ column particles
+  in Animated (AnimatedConfig 1200 EaseOut) $ column particles
   where
     particleCount :: Int
     particleCount = 20
@@ -274,8 +275,7 @@ savePR st ex = do
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
       writeIORef (stNotesInput st) ""
-      confettiWidget <- confettiOverlay
-      writeIORef (stConfetti st) (Just confettiWidget)
+      writeIORef (stConfetti st) True
       triggerSync st
     Nothing -> pure ()
   where

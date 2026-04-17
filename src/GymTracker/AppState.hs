@@ -13,7 +13,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import GymTracker.Model (Exercise)
 import Hatter.Http (HttpState)
-import Hatter.Widget (Widget)
+import System.Random (StdGen, newStdGen)
 
 -- | Application screens.
 data Screen
@@ -32,9 +32,11 @@ data AppState = AppState
     -- ^ Held while a sync is in progress. 'tryPutMVar' guards against overlapping syncs.
   , stPercentage      :: IORef Word
     -- ^ Percentage of 1RM to calculate (0 = disabled).
-  , stConfetti        :: IORef (Maybe Widget)
-    -- ^ Confetti overlay widget, generated once on save so re-renders
-    -- during animation don't regenerate random positions.
+  , stConfetti        :: IORef Bool
+    -- ^ Show confetti animation after saving a new PR.
+  , stConfettiSeed    :: StdGen
+    -- ^ RNG seed generated at boot. Ensures confetti particle positions
+    -- are deterministic across re-renders (see jappeace/hatter#199).
   , stNotesInput      :: IORef Text
     -- ^ Text input for optional notes on a PR entry.
   }
@@ -49,7 +51,8 @@ newAppState initialRecords = do
   httpState       <- newIORef Nothing
   syncLock        <- newMVar ()
   percentage      <- newIORef 0
-  confetti        <- newIORef Nothing
+  confetti        <- newIORef False
+  confettiSeed    <- newStdGen
   notesInput      <- newIORef ""
   pure AppState
     { stScreen          = screen
@@ -60,5 +63,6 @@ newAppState initialRecords = do
     , stSyncLock        = syncLock
     , stPercentage      = percentage
     , stConfetti        = confetti
+    , stConfettiSeed    = confettiSeed
     , stNotesInput      = notesInput
     }

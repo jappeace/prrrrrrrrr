@@ -31,6 +31,7 @@ import GymTracker.Storage
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
 import Hatter.Widget (AnimatedConfig(..), Easing(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
+import System.Random (newStdGen)
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -334,8 +335,7 @@ confettiTests = testGroup "Confetti"
 
   , testCase "enterPRView with confetti has overlay and 6 form children" $ do
       (st, actions) <- mkTestActions
-      confettiWidget <- confettiOverlay
-      writeIORef (stConfetti st) (Just confettiWidget)
+      writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case unwrapEnterPRStack widget of
         Right (confettiWidgets, formWidgets) -> do
@@ -345,8 +345,7 @@ confettiTests = testGroup "Confetti"
 
   , testCase "enterPRView confetti layer first child is Animated" $ do
       (st, actions) <- mkTestActions
-      confettiWidget <- confettiOverlay
-      writeIORef (stConfetti st) (Just confettiWidget)
+      writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case unwrapEnterPRStack widget of
         Right (confettiWidgets, _formWidgets) ->
@@ -358,7 +357,8 @@ confettiTests = testGroup "Confetti"
         Left err -> assertFailure err
 
   , testCase "confettiOverlay contains 20 particles in a Column" $ do
-      widget <- confettiOverlay
+      gen <- newStdGen
+      let widget = confettiOverlay gen
       case widget of
         Animated _ (Column settings@LayoutSettings { lsScrollable = False }) -> length (layoutWidgets settings) @?= 20
         Animated _ _  -> assertFailure "expected Column inside Animated"
