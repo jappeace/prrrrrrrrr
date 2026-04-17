@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace",
+        "owner": "jappeace-sloth",
         "repo": "hatter"
       },
-      "branch": "master",
+      "branch": "test/confetti-repro-integration",
       "submodules": false,
-      "revision": "9c32fdcdccac177401dac0e78b4fa1e8cf317ad1",
-      "url": "https://github.com/jappeace/hatter/archive/9c32fdcdccac177401dac0e78b4fa1e8cf317ad1.tar.gz",
-      "hash": "sha256-57fgkegNj0ylzMY4DZ2I2mWaZ2MWtey1f5sj0ux+cHM="
+      "revision": "cad540d62b400830cbd07d470e011e7f816deced",
+      "url": "https://github.com/jappeace-sloth/hatter/archive/cad540d62b400830cbd07d470e011e7f816deced.tar.gz",
+      "hash": "sha256-lGrXsoxOKZxi8KzfI/qQek0fjeZyYZH/5k/ExD4zSHw="
     },
     "mobile-core-tools": {
       "type": "Git",
