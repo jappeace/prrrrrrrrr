@@ -23,8 +23,22 @@ jobs:
           access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
           extra-substituters = https://nix-cache.jappie.me
           extra-trusted-public-keys = nix-cache.jappie.me:WjkKcvFtHih2i+n7bdsrJ3HuGboJiU2hA2CZbf9I9oc=
+    - name: Enable KVM for Android emulator
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
     - name: Build (Haskell unit tests + Android library + APK)
       run: nix-build nix/ci.nix -A native -A android -A apk
+    - name: Build UI test
+      run: nix-build nix/emulator-ui.nix -o result-emulator-ui
+    - name: Run UI test
+      run: |
+        set -o pipefail
+        # Test script boots emulator + installs APK once, then retries
+        # the test flow up to 3 times internally. Fatal crashes (e.g.
+        # UnsatisfiedLinkError) abort immediately without retrying.
+        ./result-emulator-ui/bin/test-ui 2>&1 | tee /tmp/ui-test.log
     - name: Cancel workflow on failure
       if: failure()
       continue-on-error: true
