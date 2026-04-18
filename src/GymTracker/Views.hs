@@ -16,7 +16,7 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
-import System.Random (StdGen, randomRs)
+import System.Random (newStdGen, randomRs)
 import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
@@ -30,21 +30,23 @@ import GymTracker.Model
 import GymTracker.Storage (withDatabase, saveRecord, loadExerciseHistory)
 import GymTracker.Sync (triggerSync)
 import Hatter (Action, OnChange, ActionM, createAction, createOnChange)
+import Hatter.DeviceInfo (DeviceInfo(..), getDeviceInfo)
 import Hatter.Widget
-  ( AnimatedConfig(..)
-  , item
-  , ButtonConfig(..)
+  ( ButtonConfig(..)
   , Color(..)
-  , Easing(..)
   , InputType(..)
   , TextAlignment(..)
   , TextConfig(..)
   , TextInputConfig(..)
   , Widget(..)
   , WidgetStyle(..)
+  , andThen
   , column
+  , easeOutAnimation
+  , linearAnimation
   , row
   , scrollColumn
+  , stack
   , defaultStyle
   )
 
@@ -201,10 +203,13 @@ enterPRView actions st ex = do
             ]
         , column historyWidgets
         ]
-  let confettiLayer = if showConfetti
-        then [Styled confettiPosition (confettiOverlay (stConfettiSeed st))]
-        else []
-  pure $ scrollColumn [Stack $ item <$> [column confettiLayer, column formWidgets]]
+  confettiLayer <- if showConfetti
+    then fmap (: []) confettiOverlay
+    else pure []
+  -- Always use stack as root so the diff algorithm sees a stable root
+  -- type across renders.  Confetti floats as a second stack child on top
+  -- of the form column, using wsTouchPassthrough so taps pass through.
+  pure $ stack $ column formWidgets : confettiLayer
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
@@ -217,20 +222,27 @@ historyEntry (weight, timestamp, notes) =
 
 -- | Confetti animation overlay — particles explode outward from the origin.
 -- Shown on the EnterPR screen after saving a new personal record.
--- Takes a seed generated at boot so particle positions are deterministic
--- across re-renders (animation frames trigger renderView each vsync).
--- See jappeace/hatter#199 for why widget trees must be deterministic.
---
--- Particles are placed in a Stack (all sharing origin) and animated
--- outward in random directions at random speeds.  The caller positions
--- the origin via a centering translate (see 'confettiPosition').
-confettiOverlay :: StdGen -> Widget
-confettiOverlay seed =
-  let randoms = randomRs (0 :: Int, 999) seed
-      -- Take 3 random ints per particle: angle seed, distance seed, color index
+-- Uses random positions and colors so each celebration looks unique.
+-- Each particle scatters from the origin (top-left) to a random screen
+-- position over 1.5s (ease-out), then fades out over 0.8s (linear).
+confettiOverlay :: IO Widget
+confettiOverlay = do
+  deviceInfo <- getDeviceInfo
+  gen <- newStdGen
+  let -- Convert physical pixels to dp; desktop returns 0 so use fallback
+      density = max 1.0 (diScreenDensity deviceInfo)
+      rawWidth = diScreenWidth deviceInfo
+      rawHeight = diScreenHeight deviceInfo
+      dpWidth :: Double
+      dpWidth  = if rawWidth  == 0 then 400 else fromIntegral rawWidth  / density
+      dpHeight :: Double
+      dpHeight = if rawHeight == 0 then 800 else fromIntegral rawHeight / density
+      randoms = randomRs (0 :: Int, 999) gen
+      -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
       triples = takeTriples particleCount randoms
-      particles = map mkParticle triples
-  in Animated (AnimatedConfig 1200 EaseOut) $ Stack (item <$> particles)
+      particles = map (mkParticle dpWidth dpHeight) triples
+  pure $ Styled (defaultStyle { wsTouchPassthrough = Just True })
+       $ stack particles
   where
     particleCount :: Int
     particleCount = 20
@@ -243,18 +255,33 @@ confettiOverlay seed =
     takeTriples _ [_, _]        = []
     takeTriples n (a:b:c:rest)  = (a, b, c) : takeTriples (n - 1) rest
 
-    mkParticle :: (Int, Int, Int) -> Widget
-    mkParticle (angleSeed, distanceSeed, colorSeed) =
-      let angle    = fromIntegral (angleSeed `mod` 360) * pi / 180.0 :: Double
-          distance = fromIntegral (distanceSeed `mod` 121) + 40 :: Double  -- 40 to 160
-          offsetX  = distance * cos angle
-          offsetY  = distance * sin angle
-          color    = palette !! (colorSeed `mod` length palette)
-      in Styled (defaultStyle
-        { wsTextColor  = Just color
-        , wsTranslateX = Just offsetX
-        , wsTranslateY = Just offsetY
-        }) (Text TextConfig { tcLabel = "*", tcFontConfig = Nothing })
+    -- | Build a single confetti particle with scatter + fade animation.
+    mkParticle :: Double -> Double -> (Int, Int, Int) -> Widget
+    mkParticle screenWidth screenHeight (xSeed, ySeed, colorSeed) =
+      let targetX = fromIntegral (xSeed `mod` 1000) / 999.0 * screenWidth
+          targetY = fromIntegral (ySeed `mod` 1000) / 999.0 * screenHeight
+          color   = palette !! (colorSeed `mod` length palette)
+          originStyle = defaultStyle
+            { wsTranslateX = Just 0
+            , wsTranslateY = Just 0
+            , wsTextColor  = Just color
+            }
+          targetStyle = defaultStyle
+            { wsTranslateX = Just targetX
+            , wsTranslateY = Just targetY
+            , wsTextColor  = Just color
+            }
+          fadeStyle = defaultStyle
+            { wsTranslateX = Just targetX
+            , wsTranslateY = Just targetY
+            , wsTextColor  = Just (color { colorAlpha = 0 })
+            }
+          animConfig = easeOutAnimation 1.5 originStyle targetStyle
+                         `andThen`
+                       linearAnimation 0.8 targetStyle fadeStyle
+      in Animated animConfig
+           $ Styled fadeStyle
+               (Text TextConfig { tcLabel = "*", tcFontConfig = Nothing })
 
     palette :: [Color]
     palette =
@@ -313,16 +340,6 @@ parsePercentage t =
 -- | Center-aligned text for category headers.
 centeredText :: WidgetStyle
 centeredText = defaultStyle { wsTextAlign = Just AlignCenter }
-
--- | Position the confetti explosion origin near the centre of a round
--- watch screen (~312 px usable after 24 px padding on a 360 px display).
--- Touch passthrough lets users interact with the form underneath.
-confettiPosition :: WidgetStyle
-confettiPosition = defaultStyle
-  { wsTranslateX      = Just 140
-  , wsTranslateY      = Just 140
-  , wsTouchPassthrough = Just True
-  }
 
 -- | Padding for round watch screens — keeps content away from curved edges.
 roundScreenPadding :: WidgetStyle

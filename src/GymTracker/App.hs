@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | App registration for the gym PR tracker.
-module Hatter.App (mobileApp) where
+module GymTracker.App (mobileApp) where
 
 import Data.IORef (writeIORef)
 import Data.Text (pack)

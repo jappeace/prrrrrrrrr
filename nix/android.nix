@@ -36,7 +36,7 @@ let
     };
 
   crossDeps = import "${hatterSrc}/nix/cross-deps.nix" {
-    inherit sources androidArch consumerCabal2Nix;
+    inherit sources androidArch consumerCabal2Nix hatterSrc;
     hpkgs = self: _super: {
       pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
     };
@@ -47,9 +47,19 @@ lib.mkAndroidLib {
   inherit hatterSrc mainModule crossDeps;
   pname = "prrrrrrrrr-android";
   javaPackageName = "me.jappie.prrrrrrrrr";
+  # The new lib.nix (keyframe-animation) compiles Main.hs with -c (one-shot),
+  # which looks for .hi files for imports — consumer source modules only have
+  # .hs files.  Override to --make so GHC compiles consumer sources transitively.
+  # Remove hatter source files first to avoid ambiguity with the package DB.
+  extraGhcFlags = ["--make" "-no-link"];
   extraModuleCopy = ''
-    mkdir -p GymTracker Hatter
-    cp ${../src/Hatter/App.hs} Hatter/App.hs
+    # Remove hatter source files — hatter is pre-compiled in the package DB.
+    # Leaving them would cause "ambiguous module" errors with --make.
+    rm -f Hatter.hs
+    rm -rf Hatter/
+
+    mkdir -p GymTracker
+    cp ${../src/GymTracker/App.hs} GymTracker/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
     cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
@@ -58,4 +68,15 @@ lib.mkAndroidLib {
     cp ${../src/GymTracker/Sync.hs} GymTracker/Sync.hs
     cp ${../src/GymTracker/Views.hs} GymTracker/Views.hs
   '';
+  # --make produces .o files for each consumer module; the link step needs them.
+  extraLinkObjects = [
+    "$(pwd)/GymTracker/App.o"
+    "$(pwd)/GymTracker/AppState.o"
+    "$(pwd)/GymTracker/Config.o"
+    "$(pwd)/GymTracker/Model.o"
+    "$(pwd)/GymTracker/ServantNative.o"
+    "$(pwd)/GymTracker/Storage.o"
+    "$(pwd)/GymTracker/Sync.o"
+    "$(pwd)/GymTracker/Views.o"
+  ];
 }

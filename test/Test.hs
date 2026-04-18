@@ -25,13 +25,13 @@ import GymTracker.Model
 import GymTracker.Storage
   ( withDatabase, initDB, loadRecords, saveRecord, loadExerciseHistory
   , getLastSyncTime, setLastSyncTime, getHistorySince, mergeRecord, mergeHistoryEntry
-  , deleteRecordsByExercise, deleteSyncMeta
+  , deleteRecordsByExercise, deleteHistoryByExercise, deleteSyncMeta
   , queryHistoryByExerciseAndTime, insertHistory
   )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
-import Hatter.Widget (AnimatedConfig(..), Easing(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
+import Hatter.Widget (AnimatedConfig(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
-import System.Random (newStdGen)
+
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -187,19 +187,6 @@ storageTests = sequentialTestGroup "Storage" AllFinish
 layoutWidgets :: LayoutSettings -> [Widget]
 layoutWidgets = map liWidget . lsWidgets
 
--- | Unwrap the enterPRView structure: scrollable Column > Stack > [confetti layer, form layer].
--- Returns (confettiWidgets, formWidgets).
-unwrapEnterPRStack :: Widget -> Either String ([Widget], [Widget])
-unwrapEnterPRStack (Column settings) | lsScrollable settings =
-  case layoutWidgets settings of
-    [Stack stackItems] ->
-      case map liWidget stackItems of
-        [Column confettiSettings, Column formSettings] ->
-          Right (layoutWidgets confettiSettings, layoutWidgets formSettings)
-        _ -> Left "expected Stack with two Column layers"
-    _ -> Left "expected single Stack child in scroll column"
-unwrapEnterPRStack _ = Left "expected scrollable Column wrapping a Stack"
-
 -- | Create a test AppState + AppActions pair.
 mkTestActions :: IO (AppState, AppActions)
 mkTestActions = do
@@ -233,26 +220,32 @@ viewTests = testGroup "Views"
         Column _ -> assertFailure "expected scrollable Column"
         _        -> assertFailure "expected Column"
 
-  , testCase "enterPRView returns Column with input, buttons, and history section" $ do
+  , testCase "enterPRView returns Stack with 1 child (form column)" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
-      case unwrapEnterPRStack widget of
-        Right (_confetti, formWidgets) ->
-          -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
-          length formWidgets @?= 6
-        Left err -> assertFailure err
+      case widget of
+        Stack stackItems ->
+          case map liWidget stackItems of
+            [Column (LayoutSettings formChildren False)] ->
+              -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
+              length formChildren @?= 6
+            _ -> assertFailure ("expected Stack with 1 Column child, got " ++ show (length stackItems))
+        _           -> assertFailure "expected Stack"
 
   , testCase "enterPRView with history shows entries in 6th Column child" $ do
       (st, actions) <- mkTestActions
       writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00", Nothing), (90.0, "2025-12-01 10:00:00", Nothing)]
       widget <- enterPRView actions st Snatch
-      case unwrapEnterPRStack widget of
-        Right (_confetti, formWidgets) ->
-          case drop 5 formWidgets of
-            (Column innerSettings@LayoutSettings { lsScrollable = False } : _) ->
-              length (layoutWidgets innerSettings) @?= 2
-            _ -> assertFailure "expected 6 children with history Column as 6th"
-        Left err -> assertFailure err
+      case widget of
+        Stack stackItems ->
+          case map liWidget stackItems of
+            [Column (LayoutSettings formChildren False)] ->
+              case drop 5 (map liWidget formChildren) of
+                (Column innerSettings@LayoutSettings { lsScrollable = False } : _) ->
+                  length (layoutWidgets innerSettings) @?= 2
+                _ -> assertFailure "expected 6 children with history Column as 6th"
+            _ -> assertFailure "expected Stack with form Column"
+        _       -> assertFailure "expected Stack"
 
   , testCase "appRootView dispatches to correct screen" $ do
       (st, actions) <- mkTestActions
@@ -324,68 +317,74 @@ percentageTests = testGroup "Percentage calculator"
 
 confettiTests :: TestTree
 confettiTests = testGroup "Confetti"
-  [ testCase "enterPRView without confetti has 6 form children and empty confetti layer" $ do
+  [ testCase "enterPRView without confetti is Stack with 1 child" $ do
       (st, actions) <- mkTestActions
       widget <- enterPRView actions st Snatch
-      case unwrapEnterPRStack widget of
-        Right (confettiWidgets, formWidgets) -> do
-          length confettiWidgets @?= 0
-          length formWidgets @?= 6
-        Left err -> assertFailure err
+      case widget of
+        Stack items -> length items @?= 1
+        _           -> assertFailure "expected Stack"
 
-  , testCase "enterPRView with confetti has overlay and 6 form children" $ do
+  , testCase "enterPRView with confetti has 2 stack children" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
-      case unwrapEnterPRStack widget of
-        Right (confettiWidgets, formWidgets) -> do
-          length confettiWidgets @?= 1
-          length formWidgets @?= 6
-        Left err -> assertFailure err
+      case widget of
+        Stack items -> length items @?= 2
+        _           -> assertFailure "expected Stack"
 
-  , testCase "enterPRView confetti layer first child is Styled Animated" $ do
+  , testCase "confetti second stack child has touch passthrough" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
-      case unwrapEnterPRStack widget of
-        Right (confettiWidgets, _formWidgets) ->
-          case confettiWidgets of
-            (Styled _ (Animated config _) : _) -> do
-              anDuration config @?= 1200
-              anEasing config @?= EaseOut
-            _ -> assertFailure "expected first child to be Styled (Animated ...)"
-        Left err -> assertFailure err
+      case widget of
+        Stack [_, LayoutItem _ (Styled style _)] ->
+          wsTouchPassthrough style @?= Just True
+        Stack _ -> assertFailure "expected 2 stack children with Styled confetti"
+        _       -> assertFailure "expected Stack"
 
   , testCase "confettiOverlay contains 20 particles in a Stack" $ do
-      gen <- newStdGen
-      let widget = confettiOverlay gen
+      widget <- confettiOverlay
       case widget of
-        Animated _ (Stack items) -> length items @?= 20
-        Animated _ _  -> assertFailure "expected Stack inside Animated"
-        _             -> assertFailure "expected Animated"
+        Styled _ (Stack particles) -> do
+          length particles @?= 20
+          -- Each particle should be wrapped in Animated
+          mapM_ (\(LayoutItem _ child) -> case child of
+            Animated _ _ -> pure ()
+            _            -> assertFailure "expected each particle wrapped in Animated"
+            ) particles
+        Styled _ _ -> assertFailure "expected Stack inside Styled"
+        _          -> assertFailure "expected Styled"
 
-  , testCase "confetti particles stay within watch screen bounds" $ do
-      gen <- newStdGen
-      let widget = confettiOverlay gen
+  , testCase "each confetti particle has scatter+fade animation (2.3s total)" $ do
+      widget <- confettiOverlay
       case widget of
-        Animated _ (Stack items) -> do
-          let offsets = map (extractOffsets . liWidget) items
-              -- confettiPosition centres origin at (140, 140), max distance 160
-              -- so absolute range is 140 ± 160 = (-20, 300) — within 312 px
-              withinBounds (translX, translY) =
-                abs translX <= 160 && abs translY <= 160
-          assertBool "all particle offsets within ±160 of origin"
-            (all withinBounds offsets)
-        _ -> assertFailure "expected Animated Stack"
+        Styled _ (Stack (LayoutItem _ (Animated config _) : _)) ->
+          -- easeOutAnimation 1.5 + linearAnimation 0.8 = 2.3s total
+          anDuration config @?= 2.3
+        Styled _ (Stack _) -> assertFailure "expected first particle to be Animated"
+        _                  -> assertFailure "expected Styled Stack"
+
+  , testCase "confetti particles use screen-proportional offsets" $ do
+      widget <- confettiOverlay
+      case widget of
+        Styled _ (Stack particles) -> do
+          let extractOffsets :: LayoutItem -> (Double, Double)
+              extractOffsets (LayoutItem _ (Animated _ (Styled style _))) =
+                let tx = maybe 0 id (wsTranslateX style)
+                    ty = maybe 0 id (wsTranslateY style)
+                in (tx, ty)
+              extractOffsets _ = (0, 0)
+              offsets = map extractOffsets particles
+          -- Desktop fallback: 400dp wide, 800dp tall
+          -- All offsets should be in [0, 400] x [0, 800]
+          mapM_ (\(tx, ty) -> do
+            assertBool ("translateX " ++ show tx ++ " should be >= 0") (tx >= 0)
+            assertBool ("translateX " ++ show tx ++ " should be <= 400") (tx <= 400)
+            assertBool ("translateY " ++ show ty ++ " should be >= 0") (ty >= 0)
+            assertBool ("translateY " ++ show ty ++ " should be <= 800") (ty <= 800)
+            ) offsets
+        _ -> assertFailure "expected Styled Stack"
   ]
-
--- | Extract (translateX, translateY) from a Styled particle widget.
-extractOffsets :: Widget -> (Double, Double)
-extractOffsets (Styled style _) =
-  let translX = maybe 0 id (wsTranslateX style)
-      translY = maybe 0 id (wsTranslateY style)
-  in (translX, translY)
-extractOffsets _ = (0, 0)
 
 -- | Replicate the parseWeight logic from Views for testing.
 parseWeightText :: Text -> Maybe Double
@@ -477,6 +476,7 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
   , testCase "getHistorySince returns only entries after given time" $ do
       ohsEntries <- withDatabase $ \conn -> do
         initDB conn
+        deleteHistoryByExercise conn OverheadSquat
         now <- getCurrentTime
         let past = addUTCTime (-120) now
             middle = addUTCTime (-60) now
