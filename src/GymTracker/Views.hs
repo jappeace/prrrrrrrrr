@@ -16,7 +16,7 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
-import System.Random (newStdGen, randomRs)
+import System.Random (StdGen, randomRs)
 import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
@@ -201,9 +201,9 @@ enterPRView actions st ex = do
             ]
         , column historyWidgets
         ]
-  confetti <- if showConfetti
-    then fmap (: []) confettiOverlay
-    else pure []
+  let confetti = if showConfetti
+        then [confettiOverlay (stConfettiSeed st)]
+        else []
   pure $ scrollColumn [Stack $ item <$> [column confetti, column formWidgets]]
 
 -- | Render a single history entry, optionally showing notes.
@@ -217,15 +217,16 @@ historyEntry (weight, timestamp, notes) =
 
 -- | Confetti animation overlay — scattered animated colored particles.
 -- Shown on the EnterPR screen after saving a new personal record.
--- Uses random positions and colors so each celebration looks unique.
-confettiOverlay :: IO Widget
-confettiOverlay = do
-  gen <- newStdGen
-  let randoms = randomRs (0 :: Int, 999) gen
+-- Takes a seed generated at boot so particle positions are deterministic
+-- across re-renders (animation frames trigger renderView each vsync).
+-- See jappeace/hatter#199 for why widget trees must be deterministic.
+confettiOverlay :: StdGen -> Widget
+confettiOverlay seed =
+  let randoms = randomRs (0 :: Int, 999) seed
       -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
       triples = takeTriples particleCount randoms
       particles = map mkParticle triples
-  pure $ Animated (AnimatedConfig 1200 EaseOut) $ column particles
+  in Animated (AnimatedConfig 1200 EaseOut) $ column particles
   where
     particleCount :: Int
     particleCount = 20

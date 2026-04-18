@@ -31,6 +31,7 @@ import GymTracker.Storage
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
 import Hatter.Widget (AnimatedConfig(..), Easing(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
+import System.Random (newStdGen)
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -356,7 +357,8 @@ confettiTests = testGroup "Confetti"
         Left err -> assertFailure err
 
   , testCase "confettiOverlay contains 20 particles in a Column" $ do
-      widget <- confettiOverlay
+      gen <- newStdGen
+      let widget = confettiOverlay gen
       case widget of
         Animated _ (Column settings@LayoutSettings { lsScrollable = False }) -> length (layoutWidgets settings) @?= 20
         Animated _ _  -> assertFailure "expected Column inside Animated"

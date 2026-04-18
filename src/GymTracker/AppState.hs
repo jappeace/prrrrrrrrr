@@ -13,6 +13,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import GymTracker.Model (Exercise)
 import Hatter.Http (HttpState)
+import System.Random (StdGen, newStdGen)
 
 -- | Application screens.
 data Screen
@@ -33,6 +34,9 @@ data AppState = AppState
     -- ^ Percentage of 1RM to calculate (0 = disabled).
   , stConfetti        :: IORef Bool
     -- ^ Show confetti animation after saving a new PR.
+  , stConfettiSeed    :: StdGen
+    -- ^ RNG seed generated at boot. Ensures confetti particle positions
+    -- are deterministic across re-renders (see jappeace/hatter#199).
   , stNotesInput      :: IORef Text
     -- ^ Text input for optional notes on a PR entry.
   }
@@ -48,6 +52,7 @@ newAppState initialRecords = do
   syncLock        <- newMVar ()
   percentage      <- newIORef 0
   confetti        <- newIORef False
+  confettiSeed    <- newStdGen
   notesInput      <- newIORef ""
   pure AppState
     { stScreen          = screen
@@ -58,5 +63,6 @@ newAppState initialRecords = do
     , stSyncLock        = syncLock
     , stPercentage      = percentage
     , stConfetti        = confetti
+    , stConfettiSeed    = confettiSeed
     , stNotesInput      = notesInput
     }
