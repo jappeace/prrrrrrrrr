@@ -5,13 +5,13 @@
       "repository": {
         "type": "GitHub",
         "owner": "jappeace-sloth",
-        "repo": "hatter"
+        "repo": "haskell-mobile"
       },
-      "branch": "test/confetti-repro-integration",
+      "branch": "feature/keyframe-animation",
       "submodules": false,
-      "revision": "cad540d62b400830cbd07d470e011e7f816deced",
-      "url": "https://github.com/jappeace-sloth/hatter/archive/cad540d62b400830cbd07d470e011e7f816deced.tar.gz",
-      "hash": "sha256-lGrXsoxOKZxi8KzfI/qQek0fjeZyYZH/5k/ExD4zSHw="
+      "revision": "dbb4f2bbbb54967d2ae237b096c08966f53b76aa",
+      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/dbb4f2bbbb54967d2ae237b096c08966f53b76aa.tar.gz",
+      "hash": "sha256-hC3Iw1Rj9IbFa2BQfZG19SyQmqFVHd2edOjOHFdGZAs="
     },
     "mobile-core-tools": {
       "type": "Git",
@@ -36,13 +36,13 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace-sloth",
+        "owner": "jappeace",
         "repo": "pr-sync-api"
       },
-      "branch": "feature/history-notes",
+      "branch": "master",
       "submodules": false,
-      "revision": "e6512829f6247360e9952bdfac3572de9c921bb7",
-      "url": "https://github.com/jappeace-sloth/pr-sync-api/archive/e6512829f6247360e9952bdfac3572de9c921bb7.tar.gz",
+      "revision": "0142a625ff73b0d406dfc37f79fec51c12755286",
+      "url": "https://github.com/jappeace/pr-sync-api/archive/0142a625ff73b0d406dfc37f79fec51c12755286.tar.gz",
       "hash": "sha256-rsV/RgUHxkc5F1G00Qk3riQg1zVF4KXWP74Az6lZWzA="
     }
   },
