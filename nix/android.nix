@@ -58,8 +58,8 @@ lib.mkAndroidLib {
     rm -f Hatter.hs
     rm -rf Hatter/
 
-    mkdir -p GymTracker Hatter
-    cp ${../src/Hatter/App.hs} Hatter/App.hs
+    mkdir -p GymTracker
+    cp ${../src/GymTracker/App.hs} GymTracker/App.hs
     cp ${../src/GymTracker/AppState.hs} GymTracker/AppState.hs
     cp ${../src/GymTracker/Config.hs} GymTracker/Config.hs
     cp ${../src/GymTracker/Model.hs} GymTracker/Model.hs
@@ -70,7 +70,7 @@ lib.mkAndroidLib {
   '';
   # --make produces .o files for each consumer module; the link step needs them.
   extraLinkObjects = [
-    "$(pwd)/Hatter/App.o"
+    "$(pwd)/GymTracker/App.o"
     "$(pwd)/GymTracker/AppState.o"
     "$(pwd)/GymTracker/Config.o"
     "$(pwd)/GymTracker/Model.o"

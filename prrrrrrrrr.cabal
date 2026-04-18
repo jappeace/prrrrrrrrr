@@ -54,7 +54,7 @@ common common-options
 library
   import: common-options
   exposed-modules:
-      Hatter.App
+      GymTracker.App
       GymTracker.AppState
       GymTracker.Config
       GymTracker.Model
