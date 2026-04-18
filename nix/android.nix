@@ -36,7 +36,7 @@ let
     };
 
   crossDeps = import "${hatterSrc}/nix/cross-deps.nix" {
-    inherit sources androidArch consumerCabal2Nix;
+    inherit sources androidArch consumerCabal2Nix hatterSrc;
     hpkgs = self: _super: {
       pr-sync-api = self.callCabal2nix "pr-sync-api" prSyncApiSrc {};
     };
