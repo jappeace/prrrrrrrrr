@@ -31,6 +31,9 @@ rm -rf ios-project
 cp -r "$result/share/ios/." ios-project/
 chmod -R u+w ios-project
 
+# Clear Xcode's DerivedData for Hatter so stale build settings don't persist
+find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name 'Hatter-*' -exec rm -rf {} + 2>/dev/null || true
+
 # Generate Xcode project
 cd ios-project
 xcodegen generate
