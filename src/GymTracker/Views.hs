@@ -201,10 +201,10 @@ enterPRView actions st ex = do
             ]
         , column historyWidgets
         ]
-  let confetti = if showConfetti
-        then [confettiOverlay (stConfettiSeed st)]
+  let confettiLayer = if showConfetti
+        then [Styled confettiPosition (confettiOverlay (stConfettiSeed st))]
         else []
-  pure $ scrollColumn [Stack $ item <$> [column confetti, column formWidgets]]
+  pure $ scrollColumn [Stack $ item <$> [column confettiLayer, column formWidgets]]
 
 -- | Render a single history entry, optionally showing notes.
 historyEntry :: (Double, Text, Maybe Text) -> Widget
@@ -215,18 +215,22 @@ historyEntry (weight, timestamp, notes) =
         Nothing -> base
   in Styled centeredText $ Text TextConfig { tcLabel = label, tcFontConfig = Nothing }
 
--- | Confetti animation overlay — scattered animated colored particles.
+-- | Confetti animation overlay — particles explode outward from the origin.
 -- Shown on the EnterPR screen after saving a new personal record.
 -- Takes a seed generated at boot so particle positions are deterministic
 -- across re-renders (animation frames trigger renderView each vsync).
 -- See jappeace/hatter#199 for why widget trees must be deterministic.
+--
+-- Particles are placed in a Stack (all sharing origin) and animated
+-- outward in random directions at random speeds.  The caller positions
+-- the origin via a centering translate (see 'confettiPosition').
 confettiOverlay :: StdGen -> Widget
 confettiOverlay seed =
   let randoms = randomRs (0 :: Int, 999) seed
-      -- Take 3 random ints per particle: x-offset seed, y-offset seed, color index
+      -- Take 3 random ints per particle: angle seed, distance seed, color index
       triples = takeTriples particleCount randoms
       particles = map mkParticle triples
-  in Animated (AnimatedConfig 1200 EaseOut) $ column particles
+  in Animated (AnimatedConfig 1200 EaseOut) $ Stack (item <$> particles)
   where
     particleCount :: Int
     particleCount = 20
@@ -240,10 +244,12 @@ confettiOverlay seed =
     takeTriples n (a:b:c:rest)  = (a, b, c) : takeTriples (n - 1) rest
 
     mkParticle :: (Int, Int, Int) -> Widget
-    mkParticle (xSeed, ySeed, colorSeed) =
-      let offsetX = fromIntegral (xSeed `mod` 301) - 150 :: Double  -- -150 to +150
-          offsetY = fromIntegral (ySeed `mod` 551) - 50  :: Double  -- -50 to +500
-          color   = palette !! (colorSeed `mod` length palette)
+    mkParticle (angleSeed, distanceSeed, colorSeed) =
+      let angle    = fromIntegral (angleSeed `mod` 360) * pi / 180.0 :: Double
+          distance = fromIntegral (distanceSeed `mod` 121) + 40 :: Double  -- 40 to 160
+          offsetX  = distance * cos angle
+          offsetY  = distance * sin angle
+          color    = palette !! (colorSeed `mod` length palette)
       in Styled (defaultStyle
         { wsTextColor  = Just color
         , wsTranslateX = Just offsetX
@@ -307,6 +313,16 @@ parsePercentage t =
 -- | Center-aligned text for category headers.
 centeredText :: WidgetStyle
 centeredText = defaultStyle { wsTextAlign = Just AlignCenter }
+
+-- | Position the confetti explosion origin near the centre of a round
+-- watch screen (~312 px usable after 24 px padding on a 360 px display).
+-- Touch passthrough lets users interact with the form underneath.
+confettiPosition :: WidgetStyle
+confettiPosition = defaultStyle
+  { wsTranslateX      = Just 140
+  , wsTranslateY      = Just 140
+  , wsTouchPassthrough = Just True
+  }
 
 -- | Padding for round watch screens — keeps content away from curved edges.
 roundScreenPadding :: WidgetStyle
