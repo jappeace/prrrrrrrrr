@@ -343,27 +343,49 @@ confettiTests = testGroup "Confetti"
           length formWidgets @?= 6
         Left err -> assertFailure err
 
-  , testCase "enterPRView confetti layer first child is Animated" $ do
+  , testCase "enterPRView confetti layer first child is Styled Animated" $ do
       (st, actions) <- mkTestActions
       writeIORef (stConfetti st) True
       widget <- enterPRView actions st Snatch
       case unwrapEnterPRStack widget of
         Right (confettiWidgets, _formWidgets) ->
           case confettiWidgets of
-            (Animated config _ : _) -> do
+            (Styled _ (Animated config _) : _) -> do
               anDuration config @?= 1200
               anEasing config @?= EaseOut
-            _ -> assertFailure "expected first child to be Animated"
+            _ -> assertFailure "expected first child to be Styled (Animated ...)"
         Left err -> assertFailure err
 
-  , testCase "confettiOverlay contains 20 particles in a Column" $ do
+  , testCase "confettiOverlay contains 20 particles in a Stack" $ do
       gen <- newStdGen
       let widget = confettiOverlay gen
       case widget of
-        Animated _ (Column settings@LayoutSettings { lsScrollable = False }) -> length (layoutWidgets settings) @?= 20
-        Animated _ _  -> assertFailure "expected Column inside Animated"
+        Animated _ (Stack items) -> length items @?= 20
+        Animated _ _  -> assertFailure "expected Stack inside Animated"
         _             -> assertFailure "expected Animated"
+
+  , testCase "confetti particles stay within watch screen bounds" $ do
+      gen <- newStdGen
+      let widget = confettiOverlay gen
+      case widget of
+        Animated _ (Stack items) -> do
+          let offsets = map (extractOffsets . liWidget) items
+              -- confettiPosition centres origin at (140, 140), max distance 160
+              -- so absolute range is 140 ± 160 = (-20, 300) — within 312 px
+              withinBounds (translX, translY) =
+                abs translX <= 160 && abs translY <= 160
+          assertBool "all particle offsets within ±160 of origin"
+            (all withinBounds offsets)
+        _ -> assertFailure "expected Animated Stack"
   ]
+
+-- | Extract (translateX, translateY) from a Styled particle widget.
+extractOffsets :: Widget -> (Double, Double)
+extractOffsets (Styled style _) =
+  let translX = maybe 0 id (wsTranslateX style)
+      translY = maybe 0 id (wsTranslateY style)
+  in (translX, translY)
+extractOffsets _ = (0, 0)
 
 -- | Replicate the parseWeight logic from Views for testing.
 parseWeightText :: Text -> Maybe Double
