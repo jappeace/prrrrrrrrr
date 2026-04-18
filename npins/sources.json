@@ -4,14 +4,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace-sloth",
-        "repo": "haskell-mobile"
+        "owner": "jappeace",
+        "repo": "hatter"
       },
-      "branch": "feature/keyframe-animation",
+      "branch": "master",
       "submodules": false,
-      "revision": "dbb4f2bbbb54967d2ae237b096c08966f53b76aa",
-      "url": "https://github.com/jappeace-sloth/haskell-mobile/archive/dbb4f2bbbb54967d2ae237b096c08966f53b76aa.tar.gz",
-      "hash": "sha256-hC3Iw1Rj9IbFa2BQfZG19SyQmqFVHd2edOjOHFdGZAs="
+      "revision": "3b1b57fecf3e1c091d0e954d887ee5aa8b6c2601",
+      "url": "https://github.com/jappeace/hatter/archive/3b1b57fecf3e1c091d0e954d887ee5aa8b6c2601.tar.gz",
+      "hash": "sha256-WrdMTNekaUDMKXVJJ+BmNov9HrSVCmWZwvkRBAgCnLU="
     },
     "mobile-core-tools": {
       "type": "Git",
