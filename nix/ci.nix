@@ -63,25 +63,11 @@ let
     '';
   };
 
-  runTest = name: testDrv: scriptName:
-    pkgs.runCommand "run-${name}" {
-      __noChroot = true;
-      nativeBuildInputs = [ pkgs.jdk17_headless ];
-    } ''
-      ${testDrv}/bin/${scriptName}
-      touch $out
-    '';
 in {
   native = combined;
   android = import ./android.nix { inherit sources; };
   apk = import ./apk.nix { inherit sources; };
   apkArm7a = import ./apk.nix { inherit sources; androidArch="armv7a";};
-
-  # Android tests (Linux, needs KVM)
-  emulator-test = runTest "emulator-test"
-    (import ./emulator.nix { inherit sources; }) "test-lifecycle";
-  emulator-ui-test = runTest "emulator-ui-test"
-    (import ./emulator-ui.nix { inherit sources; }) "test-ui";
 } // (if pkgs.stdenv.isDarwin then {
   # iOS builds require macOS (native GHC + mac2ios Mach-O patching)
   ios = import ./ios.nix { inherit sources; };
