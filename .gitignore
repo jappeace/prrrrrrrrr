@@ -4,3 +4,4 @@ haskell-mobile-src
 pr-sync-api-src
 cabal.project.local
 /.envrc
+ios-project/

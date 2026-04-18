@@ -30,15 +30,17 @@ export PRRRRRRRRR_API_KEY=your-key
 ./install-wear.sh               # Wear OS watch (armv7a)
 ```
 
-## iOS (simulator)
+## iOS
 
 Requires macOS with Xcode and Nix installed.
 
 ```bash
 export PRRRRRRRRR_API_KEY=your-key
-./install-ios.sh
+./setup-ios.sh              # device (default)
+./setup-ios.sh --simulator  # simulator
 ```
 
 This builds the Haskell library via native GHC, patches it for iOS with mac2ios,
-stages an Xcode project, builds it, and installs on the booted iOS simulator.
+and stages an Xcode project in `ios-project/`. Open the project in Xcode and
+build/install from there (Product → Run).
 
