@@ -35,6 +35,7 @@ import Hatter.Animation (AnimationState(..), newAnimationState)
 import Hatter.Render (RenderState, newRenderState, renderWidget)
 import Data.IntMap.Strict qualified as IntMap
 import Foreign.Ptr (nullPtr)
+import System.Random (mkStdGen)
 
 
 import Data.ByteString qualified as BS
@@ -348,7 +349,7 @@ confettiTests = testGroup "Confetti"
         _       -> assertFailure "expected Stack"
 
   , testCase "confettiOverlay contains 20 particles in a Stack" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) -> do
           length particles @?= 20
@@ -361,7 +362,7 @@ confettiTests = testGroup "Confetti"
         _          -> assertFailure "expected Styled"
 
   , testCase "each confetti particle has scatter+fade animation (2.3s total)" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack (LayoutItem _ (Animated config _) : _)) ->
           -- easeOutAnimation 1.5 + linearAnimation 0.8 = 2.3s total
@@ -370,7 +371,7 @@ confettiTests = testGroup "Confetti"
         _                  -> assertFailure "expected Styled Stack"
 
   , testCase "confetti particles use screen-proportional offsets" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) -> do
           let extractOffsets :: LayoutItem -> (Double, Double)
@@ -418,7 +419,7 @@ confettiAnimationTests :: TestTree
 confettiAnimationTests = testGroup "Confetti animation (integration)"
   [ testCase "confetti overlay registers tweens on first render" $ do
       (animState, rs) <- mkAnimRenderState
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       renderWidget rs widget
       tweens <- readIORef (ansTweens animState)
       assertBool
@@ -447,7 +448,7 @@ confettiAnimationTests = testGroup "Confetti animation (integration)"
         (IntMap.size tweensAfter > 0)
 
   , testCase "confetti particles start at origin (0,0)" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) ->
           mapM_ (\(LayoutItem _ child) -> case child of
@@ -462,7 +463,7 @@ confettiAnimationTests = testGroup "Confetti animation (integration)"
         _ -> assertFailure "expected Styled(Stack(...))"
 
   , testCase "confetti particles animate to non-zero target positions" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) -> do
           let extractTarget :: LayoutItem -> (Maybe Double, Maybe Double)
@@ -480,23 +481,20 @@ confettiAnimationTests = testGroup "Confetti animation (integration)"
           assertBool "At least some particles should have non-zero targets" hasNonZero
         _ -> assertFailure "expected Styled(Stack(...))"
 
-  , testCase "confetti uses newStdGen (non-deterministic across renders)" $ do
-      -- Bug reproducer: confettiOverlay uses newStdGen instead of a
-      -- deterministic seed.  This means every re-render produces different
-      -- particles, causing the diff engine to see them as "changed" and
-      -- restart the tween from scratch each time.
-      widget1 <- confettiOverlay
-      widget2 <- confettiOverlay
-      -- If the overlay used a deterministic seed, widgets would be equal.
-      -- With newStdGen, they are almost certainly different.
+  , testCase "confetti is deterministic with same seed" $ do
+      -- Regression test: confettiOverlay must produce identical widget trees
+      -- when called with the same StdGen.  If particles differ across
+      -- re-renders, hatter's diff engine re-registers tweens and restarts
+      -- the animation from scratch.
+      let seed = mkStdGen 42
+      widget1 <- confettiOverlay seed
+      widget2 <- confettiOverlay seed
       assertBool
-        "confettiOverlay should be deterministic across renders (uses same seed), \
-        \but currently uses newStdGen making particles different every call - \
-        \this causes animation restarts on every re-render"
+        "confettiOverlay with the same seed should produce identical widgets"
         (widget1 == widget2)
 
   , testCase "confetti fade end-state has alpha 0" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack (LayoutItem _ (Animated config _) : _)) ->
           -- The last keyframe should have alpha 0 (fully transparent)

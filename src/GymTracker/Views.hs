@@ -16,7 +16,7 @@ import Data.IORef (readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
-import System.Random (newStdGen, randomRs)
+import System.Random (StdGen, randomRs)
 import GymTracker.AppState (AppState(..), Screen(..))
 import GymTracker.Model
   ( Exercise(..)
@@ -204,7 +204,7 @@ enterPRView actions st ex = do
         , column historyWidgets
         ]
   confettiLayer <- if showConfetti
-    then fmap (: []) confettiOverlay
+    then fmap (: []) (confettiOverlay (stConfettiSeed st))
     else pure []
   -- Always use stack as root so the diff algorithm sees a stable root
   -- type across renders.  Confetti floats as a second stack child on top
@@ -225,10 +225,13 @@ historyEntry (weight, timestamp, notes) =
 -- Uses random positions and colors so each celebration looks unique.
 -- Each particle scatters from the origin (top-left) to a random screen
 -- position over 1.5s (ease-out), then fades out over 0.8s (linear).
-confettiOverlay :: IO Widget
-confettiOverlay = do
+--
+-- Takes a deterministic 'StdGen' so the widget tree is identical across
+-- re-renders.  Without this, hatter's diff engine would see different
+-- particles on each render, re-register tweens, and restart the animation.
+confettiOverlay :: StdGen -> IO Widget
+confettiOverlay gen = do
   deviceInfo <- getDeviceInfo
-  gen <- newStdGen
   let -- Convert physical pixels to dp; desktop returns 0 so use fallback
       density = max 1.0 (diScreenDensity deviceInfo)
       rawWidth = diScreenWidth deviceInfo
