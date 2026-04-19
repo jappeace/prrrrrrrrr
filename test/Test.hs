@@ -29,8 +29,13 @@ import GymTracker.Storage
   , queryHistoryByExerciseAndTime, insertHistory
   )
 import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
-import Hatter.Widget (AnimatedConfig(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
+import Hatter.Widget (AnimatedConfig(..), Color(..), Keyframe(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
+import Hatter.Animation (AnimationState(..), newAnimationState)
+import Hatter.Render (RenderState, newRenderState, renderWidget)
+import Data.IntMap.Strict qualified as IntMap
+import Foreign.Ptr (nullPtr)
+import System.Random (mkStdGen)
 
 
 import Data.ByteString qualified as BS
@@ -82,6 +87,7 @@ tests = testGroup "prrrrrrrrr"
   , viewTests
   , percentageTests
   , confettiTests
+  , confettiAnimationTests
   , parseTests
   , syncPureTests
   , servantNativeTests
@@ -343,7 +349,7 @@ confettiTests = testGroup "Confetti"
         _       -> assertFailure "expected Stack"
 
   , testCase "confettiOverlay contains 20 particles in a Stack" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) -> do
           length particles @?= 20
@@ -356,7 +362,7 @@ confettiTests = testGroup "Confetti"
         _          -> assertFailure "expected Styled"
 
   , testCase "each confetti particle has scatter+fade animation (2.3s total)" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack (LayoutItem _ (Animated config _) : _)) ->
           -- easeOutAnimation 1.5 + linearAnimation 0.8 = 2.3s total
@@ -365,7 +371,7 @@ confettiTests = testGroup "Confetti"
         _                  -> assertFailure "expected Styled Stack"
 
   , testCase "confetti particles use screen-proportional offsets" $ do
-      widget <- confettiOverlay
+      widget <- confettiOverlay (mkStdGen 42)
       case widget of
         Styled _ (Stack particles) -> do
           let extractOffsets :: LayoutItem -> (Double, Double)
@@ -384,6 +390,121 @@ confettiTests = testGroup "Confetti"
             assertBool ("translateY " ++ show ty ++ " should be <= 800") (ty <= 800)
             ) offsets
         _ -> assertFailure "expected Styled Stack"
+  ]
+
+-- ---------------------------------------------------------------------------
+-- Confetti animation integration tests
+-- ---------------------------------------------------------------------------
+--
+-- These tests render the actual confetti widget tree through hatter's
+-- rendering engine and verify that animation tweens are registered and
+-- dispatched correctly.  They reproduce the real code path: the outer
+-- Stack transitions from 1 child (form only) to 2 children (form +
+-- confetti overlay), which is the exact diff scenario that occurs when
+-- the user saves a PR.
+
+-- | Set up an AnimationState + RenderState for animation integration tests.
+-- Sets ansLoopActive True and ansContextPtr to nullPtr so registerTween
+-- skips the FFI start-loop call (desktop stub fires synchronous test frames).
+mkAnimRenderState :: IO (AnimationState, RenderState)
+mkAnimRenderState = do
+  animState <- newAnimationState
+  writeIORef (ansContextPtr animState) nullPtr
+  writeIORef (ansLoopActive animState) True
+  actionState <- newActionState
+  rs <- newRenderState actionState animState
+  pure (animState, rs)
+
+confettiAnimationTests :: TestTree
+confettiAnimationTests = testGroup "Confetti animation (integration)"
+  [ testCase "confetti overlay registers tweens on first render" $ do
+      (animState, rs) <- mkAnimRenderState
+      widget <- confettiOverlay (mkStdGen 42)
+      renderWidget rs widget
+      tweens <- readIORef (ansTweens animState)
+      assertBool
+        ("Expected tweens for 20 particles, got " ++ show (IntMap.size tweens))
+        (IntMap.size tweens > 0)
+
+  , testCase "Stack transition 1->2 children registers confetti tweens" $ do
+      -- Simulates the actual diff: first render without confetti, then with.
+      (animState, rs) <- mkAnimRenderState
+      (st, actions) <- mkTestActions
+      -- Render 1: no confetti (Stack with 1 Column child)
+      widgetBefore <- enterPRView actions st Snatch
+      renderWidget rs widgetBefore
+      _tweensBefore <- readIORef (ansTweens animState)
+      -- Clear tweens from desktop stub test frames that may have fired
+      writeIORef (ansTweens animState) IntMap.empty
+      writeIORef (ansLoopActive animState) True
+      -- Render 2: enable confetti (Stack grows to 2 children)
+      writeIORef (stConfetti st) True
+      widgetAfter <- enterPRView actions st Snatch
+      renderWidget rs widgetAfter
+      tweensAfter <- readIORef (ansTweens animState)
+      assertBool
+        ("Expected confetti tweens after Stack 1->2 transition, got "
+         ++ show (IntMap.size tweensAfter))
+        (IntMap.size tweensAfter > 0)
+
+  , testCase "confetti particles start at origin (0,0)" $ do
+      widget <- confettiOverlay (mkStdGen 42)
+      case widget of
+        Styled _ (Stack particles) ->
+          mapM_ (\(LayoutItem _ child) -> case child of
+            Animated config (Styled _fadeStyle _text) ->
+              case anKeyframes config of
+                (firstKf : _) -> do
+                  wsTranslateX (kfStyle firstKf) @?= Just 0
+                  wsTranslateY (kfStyle firstKf) @?= Just 0
+                [] -> assertFailure "expected at least one keyframe"
+            _ -> assertFailure "expected Animated(Styled(Text))"
+            ) particles
+        _ -> assertFailure "expected Styled(Stack(...))"
+
+  , testCase "confetti particles animate to non-zero target positions" $ do
+      widget <- confettiOverlay (mkStdGen 42)
+      case widget of
+        Styled _ (Stack particles) -> do
+          let extractTarget :: LayoutItem -> (Maybe Double, Maybe Double)
+              extractTarget (LayoutItem _ (Animated config _child)) =
+                case reverse (anKeyframes config) of
+                  (lastKf : _) -> (wsTranslateX (kfStyle lastKf), wsTranslateY (kfStyle lastKf))
+                  []           -> (Nothing, Nothing)
+              extractTarget _ = (Nothing, Nothing)
+              targets = map extractTarget particles
+              -- At least some particles should have non-zero target positions
+              hasNonZero = any (\(maybeTargetX, maybeTargetY) ->
+                case (maybeTargetX, maybeTargetY) of
+                  (Just targetX, Just targetY) -> targetX /= 0 || targetY /= 0
+                  _                            -> False) targets
+          assertBool "At least some particles should have non-zero targets" hasNonZero
+        _ -> assertFailure "expected Styled(Stack(...))"
+
+  , testCase "confetti is deterministic with same seed" $ do
+      -- Regression test: confettiOverlay must produce identical widget trees
+      -- when called with the same StdGen.  If particles differ across
+      -- re-renders, hatter's diff engine re-registers tweens and restarts
+      -- the animation from scratch.
+      let seed = mkStdGen 42
+      widget1 <- confettiOverlay seed
+      widget2 <- confettiOverlay seed
+      assertBool
+        "confettiOverlay with the same seed should produce identical widgets"
+        (widget1 == widget2)
+
+  , testCase "confetti fade end-state has alpha 0" $ do
+      widget <- confettiOverlay (mkStdGen 42)
+      case widget of
+        Styled _ (Stack (LayoutItem _ (Animated config _) : _)) ->
+          -- The last keyframe should have alpha 0 (fully transparent)
+          case reverse (anKeyframes config) of
+            (lastKf : _) ->
+              case wsTextColor (kfStyle lastKf) of
+                Just color -> colorAlpha color @?= 0
+                Nothing    -> assertFailure "last keyframe should have textColor"
+            [] -> assertFailure "expected at least one keyframe"
+        _ -> assertFailure "expected Styled(Stack(Animated ...))"
   ]
 
 -- | Replicate the parseWeight logic from Views for testing.
