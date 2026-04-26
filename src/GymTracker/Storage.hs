@@ -29,7 +29,8 @@ module GymTracker.Storage
   )
 where
 
-import Data.Int (Int64)
+import Control.Exception (SomeException, catch)
+import Data.Int (Int32, Int64)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text, pack, unpack)
@@ -100,6 +101,7 @@ data PrHistoryT f = PrHistory
   { phId         :: Columnar f (SqlSerial Int64)
   , phExercise   :: Columnar f Text
   , phWeightKg   :: Columnar f Double
+  , phReps       :: Columnar f Int32
   , phRecordedAt :: Columnar f Text
   , phNotes      :: Columnar f (Maybe Text)
   } deriving (Generic)
@@ -150,6 +152,7 @@ prDb = defaultDbSettings `withDbModification` PrDb
         { phId         = fieldNamed "id"
         , phExercise   = fieldNamed "exercise"
         , phWeightKg   = fieldNamed "weight_kg"
+        , phReps       = fieldNamed "reps"
         , phRecordedAt = fieldNamed "recorded_at"
         , phNotes      = fieldNamed "notes"
         }
@@ -183,7 +186,11 @@ initDB conn = do
     \(exercise TEXT UNIQUE NOT NULL, weight_kg REAL NOT NULL)"
   SQLite.execute_ conn "CREATE TABLE IF NOT EXISTS pr_history \
     \(id INTEGER PRIMARY KEY, exercise TEXT NOT NULL, weight_kg REAL NOT NULL, \
-    \recorded_at TEXT NOT NULL, notes TEXT)"
+    \reps INTEGER NOT NULL DEFAULT 1, recorded_at TEXT NOT NULL, notes TEXT)"
+  -- Migration: add reps column to existing databases that lack it.
+  -- ALTER TABLE fails if the column already exists; silently ignore that error.
+  (SQLite.execute_ conn "ALTER TABLE pr_history ADD COLUMN reps INTEGER NOT NULL DEFAULT 1")
+    `catch` (\(_ :: SomeException) -> pure ())
   SQLite.execute_ conn "CREATE TABLE IF NOT EXISTS sync_meta \
     \(key TEXT UNIQUE NOT NULL, value TEXT NOT NULL)"
 
@@ -199,8 +206,8 @@ loadRecords conn = do
     ]
 
 -- | Save a single PR record (upsert) and append to history.
-saveRecord :: Connection -> Exercise -> Double -> Maybe Text -> IO ()
-saveRecord conn exercise weight notes = do
+saveRecord :: Connection -> Exercise -> Double -> Int -> Maybe Text -> IO ()
+saveRecord conn exercise weight reps notes = do
   let name = exerciseName exercise
   runBeamSqlite conn $ do
     runInsert $ insertOnConflict (dbPrRecord prDb)
@@ -212,11 +219,11 @@ saveRecord conn exercise weight notes = do
   runBeamSqlite conn $
     runInsert $ insert (dbPrHistory prDb) $
       insertExpressions
-        [ PrHistory default_ (val_ name) (val_ weight)
+        [ PrHistory default_ (val_ name) (val_ weight) (val_ (fromIntegral reps :: Int32))
                     (val_ (pack (show now))) (val_ notes) ]
 
 -- | Load all history entries for an exercise, newest first.
-loadExerciseHistory :: Connection -> Exercise -> IO [(Double, Text, Maybe Text)]
+loadExerciseHistory :: Connection -> Exercise -> IO [(Double, Int, Text, Maybe Text)]
 loadExerciseHistory conn exercise = do
   rows <- runBeamSqlite conn $
     runSelectReturningList $ select $
@@ -224,7 +231,7 @@ loadExerciseHistory conn exercise = do
         row <- all_ (dbPrHistory prDb)
         guard_ (phExercise row ==. val_ (exerciseName exercise))
         pure row
-  pure [(phWeightKg row, phRecordedAt row, phNotes row) | row <- rows]
+  pure [(phWeightKg row, fromIntegral (phReps row), phRecordedAt row, phNotes row) | row <- rows]
 
 -- | Read the last sync time from sync_meta, if any.
 getLastSyncTime :: Connection -> IO (Maybe UTCTime)
@@ -250,7 +257,7 @@ setLastSyncTime conn syncTimestamp = do
         smValue fields <-. val_ timeText))
 
 -- | Get all history entries recorded after the given time.
-getHistorySince :: Connection -> UTCTime -> IO [(Exercise, Double, UTCTime, Maybe Text)]
+getHistorySince :: Connection -> UTCTime -> IO [(Exercise, Double, Int, UTCTime, Maybe Text)]
 getHistorySince conn since = do
   rows <- runBeamSqlite conn $
     runSelectReturningList $ select $
@@ -258,7 +265,7 @@ getHistorySince conn since = do
         row <- all_ (dbPrHistory prDb)
         guard_ (phRecordedAt row >. val_ (pack (show since)))
         pure row
-  pure [ (exercise, phWeightKg row, read (unpack (phRecordedAt row)), phNotes row)
+  pure [ (exercise, phWeightKg row, fromIntegral (phReps row), read (unpack (phRecordedAt row)), phNotes row)
        | row <- rows
        , Just exercise <- [parseExercise (phExercise row)]
        ]
@@ -281,9 +288,9 @@ mergeRecord conn exercise weight = do
         (onConflictUpdateSet (\fields _excluded ->
           prWeightKg fields <-. val_ weight))
 
--- | Insert a history entry if no duplicate exists (same exercise, weight, and timestamp).
-mergeHistoryEntry :: Connection -> Exercise -> Double -> UTCTime -> Maybe Text -> IO ()
-mergeHistoryEntry conn exercise weight timestamp notes = do
+-- | Insert a history entry if no duplicate exists (same exercise, weight, reps, and timestamp).
+mergeHistoryEntry :: Connection -> Exercise -> Double -> Int -> UTCTime -> Maybe Text -> IO ()
+mergeHistoryEntry conn exercise weight reps timestamp notes = do
   let name = exerciseName exercise
       timestampStr = pack (show timestamp)
   existing <- runBeamSqlite conn $
@@ -291,6 +298,7 @@ mergeHistoryEntry conn exercise weight timestamp notes = do
       row <- all_ (dbPrHistory prDb)
       guard_ (phExercise row ==. val_ name)
       guard_ (phWeightKg row ==. val_ weight)
+      guard_ (phReps row ==. val_ (fromIntegral reps :: Int32))
       guard_ (phRecordedAt row ==. val_ timestampStr)
       pure row
   case existing of
@@ -298,7 +306,7 @@ mergeHistoryEntry conn exercise weight timestamp notes = do
     Nothing -> runBeamSqlite conn $
       runInsert $ insert (dbPrHistory prDb) $
         insertExpressions
-          [ PrHistory default_ (val_ name) (val_ weight)
+          [ PrHistory default_ (val_ name) (val_ weight) (val_ (fromIntegral reps :: Int32))
                       (val_ timestampStr) (val_ notes) ]
 
 -- | Delete all PR records for a given exercise (used by tests).
@@ -337,10 +345,10 @@ queryHistoryByExerciseAndTime conn exercise weight timestamp =
     (exerciseName exercise, weight, show timestamp)
 
 -- | Insert a raw history entry (used by tests that need specific timestamps).
-insertHistory :: Connection -> Exercise -> Double -> UTCTime -> Maybe Text -> IO ()
-insertHistory conn exercise weight timestamp notes =
+insertHistory :: Connection -> Exercise -> Double -> Int -> UTCTime -> Maybe Text -> IO ()
+insertHistory conn exercise weight reps timestamp notes =
   runBeamSqlite conn $
     runInsert $ insert (dbPrHistory prDb) $
       insertExpressions
-        [ PrHistory default_ (val_ (exerciseName exercise)) (val_ weight)
+        [ PrHistory default_ (val_ (exerciseName exercise)) (val_ weight) (val_ (fromIntegral reps :: Int32))
                     (val_ (pack (show timestamp))) (val_ notes) ]

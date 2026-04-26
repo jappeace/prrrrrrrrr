@@ -28,7 +28,7 @@ import GymTracker.Storage
   , deleteRecordsByExercise, deleteHistoryByExercise, deleteSyncMeta
   , queryHistoryByExerciseAndTime, insertHistory
   )
-import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay)
+import GymTracker.Views (AppActions, exerciseListView, enterPRView, appRootView, createAppActions, calculatePercentage, confettiOverlay, estimate1RM, parseReps)
 import Hatter.Widget (AnimatedConfig(..), Color(..), Keyframe(..), LayoutItem(..), LayoutSettings(..), TextAlignment(..), TextConfig(..), Widget(..), WidgetStyle(..))
 import Hatter (newActionState, runActionM)
 import Hatter.Animation (AnimationState(..), newAnimationState)
@@ -89,6 +89,7 @@ tests = testGroup "prrrrrrrrr"
   , confettiTests
   , confettiAnimationTests
   , parseTests
+  , repsTests
   , syncPureTests
   , servantNativeTests
   ]
@@ -143,8 +144,8 @@ storageTests = sequentialTestGroup "Storage" AllFinish
   [ testCase "saveRecord then loadRecords roundtrip" $ do
       records <- withDatabase $ \conn -> do
         initDB conn
-        saveRecord conn Snatch 80.0 Nothing
-        saveRecord conn Deadlift 150.5 Nothing
+        saveRecord conn Snatch 80.0 1 Nothing
+        saveRecord conn Deadlift 150.5 1 Nothing
         loadRecords conn
       Map.lookup Snatch records @?= Just 80.0
       Map.lookup Deadlift records @?= Just 150.5
@@ -152,39 +153,39 @@ storageTests = sequentialTestGroup "Storage" AllFinish
   , testCase "saveRecord overwrites previous value" $ do
       records <- withDatabase $ \conn -> do
         initDB conn
-        saveRecord conn BackSquat 100.0 Nothing
-        saveRecord conn BackSquat 110.0 Nothing
+        saveRecord conn BackSquat 100.0 1 Nothing
+        saveRecord conn BackSquat 110.0 1 Nothing
         loadRecords conn
       Map.lookup BackSquat records @?= Just 110.0
 
   , testCase "loadExerciseHistory returns entry after saveRecord" $ do
       history <- withDatabase $ \conn -> do
         initDB conn
-        saveRecord conn FrontSquat 90.0 Nothing
+        saveRecord conn FrontSquat 90.0 1 Nothing
         loadExerciseHistory conn FrontSquat
       case history of
         [] -> assertFailure "expected at least one history entry"
-        ((weight, _timestamp, _notes) : _) -> weight @?= 90.0
+        ((weight, _reps, _timestamp, _notes) : _) -> weight @?= 90.0
 
   , testCase "multiple saveRecord calls accumulate in history newest first" $ do
       weights <- withDatabase $ \conn -> do
         initDB conn
-        saveRecord conn PushPress 60.0 Nothing
-        saveRecord conn PushPress 65.0 Nothing
-        saveRecord conn PushPress 70.0 Nothing
+        saveRecord conn PushPress 60.0 1 Nothing
+        saveRecord conn PushPress 65.0 1 Nothing
+        saveRecord conn PushPress 70.0 1 Nothing
         history <- loadExerciseHistory conn PushPress
-        pure (map (\(w, _, _) -> w) history)
+        pure (map (\(w, _, _, _) -> w) history)
       -- newest first: 70, 65, 60 (plus any from prior test runs)
       take 3 weights @?= [70.0, 65.0, 60.0]
 
   , testCase "saveRecord with notes roundtrips through loadExerciseHistory" $ do
       history <- withDatabase $ \conn -> do
         initDB conn
-        saveRecord conn CleanAndJerk 95.0 (Just "belt used")
+        saveRecord conn CleanAndJerk 95.0 1 (Just "belt used")
         loadExerciseHistory conn CleanAndJerk
       case history of
         [] -> assertFailure "expected at least one history entry"
-        ((weight, _timestamp, notes) : _) -> do
+        ((weight, _reps, _timestamp, notes) : _) -> do
           weight @?= 95.0
           notes @?= Just "belt used"
   ]
@@ -233,23 +234,23 @@ viewTests = testGroup "Views"
         Stack stackItems ->
           case map liWidget stackItems of
             [Column (LayoutSettings formChildren False)] ->
-              -- "Set PR:" label + exercise name + weight TextInput + notes TextInput + Row of buttons + Column history = 6
-              length formChildren @?= 6
+              -- "Set PR:" label + exercise name + weight TextInput + reps TextInput + 1RM estimate + notes TextInput + Row of buttons + Column history = 8
+              length formChildren @?= 8
             _ -> assertFailure ("expected Stack with 1 Column child, got " ++ show (length stackItems))
         _           -> assertFailure "expected Stack"
 
   , testCase "enterPRView with history shows entries in 6th Column child" $ do
       (st, actions) <- mkTestActions
-      writeIORef (stHistory st) [(100.0, "2026-01-01 12:00:00", Nothing), (90.0, "2025-12-01 10:00:00", Nothing)]
+      writeIORef (stHistory st) [(100.0, 1, "2026-01-01 12:00:00", Nothing), (90.0, 1, "2025-12-01 10:00:00", Nothing)]
       widget <- enterPRView actions st Snatch
       case widget of
         Stack stackItems ->
           case map liWidget stackItems of
             [Column (LayoutSettings formChildren False)] ->
-              case drop 5 (map liWidget formChildren) of
+              case drop 7 (map liWidget formChildren) of
                 (Column innerSettings@LayoutSettings { lsScrollable = False } : _) ->
                   length (layoutWidgets innerSettings) @?= 2
-                _ -> assertFailure "expected 6 children with history Column as 6th"
+                _ -> assertFailure "expected 8 children with history Column as 8th"
             _ -> assertFailure "expected Stack with form Column"
         _       -> assertFailure "expected Stack"
 
@@ -535,6 +536,37 @@ parseTests = testGroup "Weight parsing"
       parseWeightText "0" @?= Nothing
   ]
 
+repsTests :: TestTree
+repsTests = testGroup "Reps support"
+  [ testCase "parseReps empty returns Just 1" $
+      parseReps "" @?= Just 1
+
+  , testCase "parseReps valid positive int" $
+      parseReps "5" @?= Just 5
+
+  , testCase "parseReps zero returns Nothing" $
+      parseReps "0" @?= Nothing
+
+  , testCase "parseReps negative returns Nothing" $
+      parseReps "-3" @?= Nothing
+
+  , testCase "parseReps non-numeric returns Nothing" $
+      parseReps "abc" @?= Nothing
+
+  , testCase "estimate1RM reps=1 returns weight unchanged" $
+      estimate1RM 80.0 1 @?= 80.0
+
+  , testCase "estimate1RM reps=5 at 80kg applies Epley formula" $
+      -- 80 * (1 + 5/30) = 80 * 7/6 = 93.333...
+      let result = estimate1RM 80.0 5
+      in assertBool ("expected ~93.33, got " ++ show result) (abs (result - 93.333) < 0.01)
+
+  , testCase "estimate1RM reps=10 at 100kg" $
+      -- 100 * (1 + 10/30) = 100 * 4/3 = 133.333...
+      let result = estimate1RM 100.0 10
+      in assertBool ("expected ~133.33, got " ++ show result) (abs (result - 133.333) < 0.01)
+  ]
+
 syncPureTests :: TestTree
 syncPureTests = testGroup "Sync pure"
   [ testCase "parseExercise roundtrips for all exercises" $
@@ -576,8 +608,8 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
       duplicateCount <- withDatabase $ \conn -> do
         initDB conn
         now <- getCurrentTime
-        mergeHistoryEntry conn Snatch 80.0 now Nothing
-        mergeHistoryEntry conn Snatch 80.0 now Nothing  -- duplicate
+        mergeHistoryEntry conn Snatch 80.0 1 now Nothing
+        mergeHistoryEntry conn Snatch 80.0 1 now Nothing  -- duplicate
         matches <- queryHistoryByExerciseAndTime conn Snatch 80.0 now
         pure (length matches)
       duplicateCount @?= 1
@@ -587,8 +619,8 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
         initDB conn
         now <- getCurrentTime
         let later = addUTCTime 60 now
-        mergeHistoryEntry conn Snatch 80.0 now Nothing
-        mergeHistoryEntry conn Snatch 85.0 later Nothing  -- different timestamp and weight
+        mergeHistoryEntry conn Snatch 80.0 1 now Nothing
+        mergeHistoryEntry conn Snatch 85.0 1 later Nothing  -- different timestamp and weight
         nowMatches <- queryHistoryByExerciseAndTime conn Snatch 80.0 now
         laterMatches <- queryHistoryByExerciseAndTime conn Snatch 85.0 later
         pure (length nowMatches + length laterMatches)
@@ -602,14 +634,14 @@ syncDbTests = sequentialTestGroup "Sync DB" AllFinish
         let past = addUTCTime (-120) now
             middle = addUTCTime (-60) now
         -- Insert entries at specific times
-        insertHistory conn OverheadSquat 70.0 past Nothing
-        insertHistory conn OverheadSquat 75.0 now Nothing
+        insertHistory conn OverheadSquat 70.0 1 past Nothing
+        insertHistory conn OverheadSquat 75.0 1 now Nothing
         entries <- getHistorySince conn middle
-        pure $ filter (\(ex, _, _, _) -> ex == OverheadSquat) entries
+        pure $ filter (\(ex, _, _, _, _) -> ex == OverheadSquat) entries
       -- Only the entry at 'now' should be returned (past < middle, now > middle)
       length ohsEntries @?= 1
       case ohsEntries of
-        [(_, weight, _, _)] -> weight @?= 75.0
+        [(_, weight, _, _, _)] -> weight @?= 75.0
         _                   -> assertFailure "expected exactly one OHS entry"
 
   , testCase "sync_meta roundtrip for last sync time" $ do
