@@ -36,14 +36,14 @@
       "type": "Git",
       "repository": {
         "type": "GitHub",
-        "owner": "jappeace",
+        "owner": "jappeace-sloth",
         "repo": "pr-sync-api"
       },
-      "branch": "master",
+      "branch": "feature/reps-support",
       "submodules": false,
-      "revision": "0142a625ff73b0d406dfc37f79fec51c12755286",
-      "url": "https://github.com/jappeace/pr-sync-api/archive/0142a625ff73b0d406dfc37f79fec51c12755286.tar.gz",
-      "hash": "sha256-rsV/RgUHxkc5F1G00Qk3riQg1zVF4KXWP74Az6lZWzA="
+      "revision": "95c4d74967418226c3352467bdaeb9af3ead44d3",
+      "url": "https://github.com/jappeace-sloth/pr-sync-api/archive/95c4d74967418226c3352467bdaeb9af3ead44d3.tar.gz",
+      "hash": "sha256-+vIO3te06MNDCvs9Z6dZXGlf6MTnEg47Wn0NjvZoRf0="
     }
   },
   "version": 7

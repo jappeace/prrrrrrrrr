@@ -26,7 +26,7 @@ data AppState = AppState
   { stScreen          :: IORef Screen
   , stRecords         :: IORef (Map Exercise Double)
   , stInputText       :: IORef Text
-  , stHistory         :: IORef [(Double, Text, Maybe Text)]  -- ^ weight + timestamp + notes, newest first
+  , stHistory         :: IORef [(Double, Int, Text, Maybe Text)]  -- ^ weight + reps + timestamp + notes, newest first
   , stHttpState       :: IORef (Maybe HttpState)
   , stSyncLock        :: MVar ()
     -- ^ Held while a sync is in progress. 'tryPutMVar' guards against overlapping syncs.
@@ -39,6 +39,8 @@ data AppState = AppState
     -- are deterministic across re-renders (see jappeace/hatter#199).
   , stNotesInput      :: IORef Text
     -- ^ Text input for optional notes on a PR entry.
+  , stRepsInput       :: IORef Text
+    -- ^ Text input for number of reps.
   }
 
 -- | Create a fresh 'AppState' with the given initial records.
@@ -54,6 +56,7 @@ newAppState initialRecords = do
   confetti        <- newIORef False
   confettiSeed    <- newStdGen
   notesInput      <- newIORef ""
+  repsInput       <- newIORef ""
   pure AppState
     { stScreen          = screen
     , stRecords         = records
@@ -65,4 +68,5 @@ newAppState initialRecords = do
     , stConfetti        = confetti
     , stConfettiSeed    = confettiSeed
     , stNotesInput      = notesInput
+    , stRepsInput       = repsInput
     }

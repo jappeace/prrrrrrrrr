@@ -9,6 +9,8 @@ module GymTracker.Views
   , appRootView
   , calculatePercentage
   , confettiOverlay
+  , estimate1RM
+  , parseReps
   )
 where
 
@@ -65,6 +67,8 @@ data AppActions = AppActions
     -- ^ Text input change handler for percentage entry on exercise list.
   , aaNotesInput      :: OnChange
     -- ^ Text input change handler for optional notes.
+  , aaRepsInput       :: OnChange
+    -- ^ Text input change handler for reps entry.
   }
 
 -- | Create all 'Action' / 'OnChange' handles for the app.
@@ -75,11 +79,13 @@ createAppActions st = do
   saveButtons     <- fmap Map.fromList $ mapM mkSaveAction allExercises
   back            <- createAction $ do
     writeIORef (stConfetti st) False
+    writeIORef (stRepsInput st) ""
     writeIORef (stScreen st) ExerciseList
   weightInput     <- createOnChange (\t -> writeIORef (stInputText st) t)
   percentageInput <- createOnChange (\t ->
     writeIORef (stPercentage st) (parsePercentage t))
   notesInput      <- createOnChange (\t -> writeIORef (stNotesInput st) t)
+  repsInput       <- createOnChange (\t -> writeIORef (stRepsInput st) t)
   pure AppActions
     { aaExerciseButtons = exerciseButtons
     , aaSaveButtons     = saveButtons
@@ -87,6 +93,7 @@ createAppActions st = do
     , aaWeightInput     = weightInput
     , aaPercentageInput = percentageInput
     , aaNotesInput      = notesInput
+    , aaRepsInput       = repsInput
     }
   where
     mkExerciseAction :: Exercise -> ActionM (Exercise, Action)
@@ -98,6 +105,7 @@ createAppActions st = do
         writeIORef (stScreen st) (EnterPR ex)
         writeIORef (stInputText st) ""
         writeIORef (stNotesInput st) ""
+        writeIORef (stRepsInput st) ""
       pure (ex, action)
     mkSaveAction :: Exercise -> ActionM (Exercise, Action)
     mkSaveAction ex = do
@@ -170,9 +178,16 @@ enterPRView :: AppActions -> AppState -> Exercise -> IO Widget
 enterPRView actions st ex = do
   inputVal    <- readIORef (stInputText st)
   notesVal    <- readIORef (stNotesInput st)
+  repsVal     <- readIORef (stRepsInput st)
   history     <- readIORef (stHistory st)
   showConfetti <- readIORef (stConfetti st)
   let historyWidgets = map historyEntry history
+      estimateLabel = case (parseWeight inputVal, parseReps repsVal) of
+        (Just weight, Just reps) | reps > 1 ->
+          let estimated = estimate1RM weight reps
+              rounded = fromIntegral (round (estimated * 10) :: Int) / 10.0 :: Double
+          in  "Est. 1RM: " <> formatWeight rounded
+        _                                    -> ""
       formWidgets =
         [ Styled centeredText $ Text TextConfig { tcLabel = "Set PR: ", tcFontConfig = Nothing }
         , Styled centeredText $ Text TextConfig { tcLabel = exerciseName ex, tcFontConfig = Nothing }
@@ -184,6 +199,15 @@ enterPRView actions st ex = do
             , tiFontConfig = Nothing
             , tiAutoFocus  = True
             }
+        , Styled centeredText $ TextInput TextInputConfig
+            { tiInputType  = InputNumber
+            , tiHint       = "Reps (default 1)"
+            , tiValue      = repsVal
+            , tiOnChange   = aaRepsInput actions
+            , tiFontConfig = Nothing
+            , tiAutoFocus  = False
+            }
+        , Styled centeredText $ Text TextConfig { tcLabel = estimateLabel, tcFontConfig = Nothing }
         , Styled centeredText $ TextInput TextInputConfig
             { tiInputType  = InputText
             , tiHint       = "Notes (optional)"
@@ -211,10 +235,13 @@ enterPRView actions st ex = do
   -- of the form column, using wsTouchPassthrough so taps pass through.
   pure $ stack $ column formWidgets : confettiLayer
 
--- | Render a single history entry, optionally showing notes.
-historyEntry :: (Double, Text, Maybe Text) -> Widget
-historyEntry (weight, timestamp, notes) =
-  let base = timestamp <> ": " <> formatWeight weight
+-- | Render a single history entry, optionally showing reps and notes.
+historyEntry :: (Double, Int, Text, Maybe Text) -> Widget
+historyEntry (weight, reps, timestamp, notes) =
+  let weightText = if reps > 1
+        then formatWeight weight <> " x " <> pack (show reps)
+        else formatWeight weight
+      base = timestamp <> ": " <> weightText
       label = case notes of
         Just n  -> base <> " (" <> n <> ")"
         Nothing -> base
@@ -302,15 +329,20 @@ savePR :: AppState -> Exercise -> IO ()
 savePR st ex = do
   input <- readIORef (stInputText st)
   notesRaw <- readIORef (stNotesInput st)
+  repsRaw <- readIORef (stRepsInput st)
   let notes = if notesRaw == "" then Nothing else Just notesRaw
+      reps = case parseReps repsRaw of
+        Just r  -> r
+        Nothing -> 1
   case parseWeight input of
     Just w  -> do
-      withDatabase $ \conn -> saveRecord conn ex w notes
+      withDatabase $ \conn -> saveRecord conn ex w reps notes
       modifyRecords st (Map.insert ex w)
       history <- withDatabase $ \conn -> loadExerciseHistory conn ex
       writeIORef (stHistory st) history
       writeIORef (stInputText st) ""
       writeIORef (stNotesInput st) ""
+      writeIORef (stRepsInput st) ""
       writeIORef (stConfetti st) True
       triggerSync st
     Nothing -> pure ()
@@ -339,6 +371,20 @@ parsePercentage t =
   case reads (unpack t) of
     [(n, "")] | n > 0, n <= 100 -> n
     _                            -> 0
+
+-- | Estimate 1RM from an N-rep max using the Epley formula.
+estimate1RM :: Double -> Int -> Double
+estimate1RM weight 1 = weight
+estimate1RM weight reps = weight * (1 + fromIntegral reps / 30)
+
+-- | Parse a reps string to a positive Int.
+-- Empty string returns Just 1 (default). Non-positive or non-numeric returns Nothing.
+parseReps :: Text -> Maybe Int
+parseReps t
+  | t == ""   = Just 1
+  | otherwise = case reads (unpack t) of
+      [(n, "")] | n > 0 -> Just n
+      _                  -> Nothing
 
 -- | Center-aligned text for category headers.
 centeredText :: WidgetStyle
